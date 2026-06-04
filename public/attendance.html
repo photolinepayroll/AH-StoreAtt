@@ -130,7 +130,8 @@ tr:hover td{background:#eef3ff;}
 td[contenteditable="true"]:focus{background:#fffde7;outline:2px solid #ffca28;}
 .tag{display:inline-block;padding:3px 8px;border-radius:10px;font-size:.7rem;font-weight:700;}
 .t-ok{background:#c8e6c9;color:#1b5e20;}
-.t-no{background:#fff3e0;color:#e65100;}
+.t-fuzzy{background:#fff9c4;color:#f57f17;}
+.t-no{background:#ffcdd2;color:#b71c1c;}
 .pg-chip{background:#e8eaf6;color:#3949ab;font-size:.68rem;padding:2px 6px;border-radius:8px;font-weight:700;}
 select.sel{border:1px solid #cfd8dc;border-radius:5px;padding:3px 7px;font-size:.78rem;}
 
@@ -567,8 +568,9 @@ async function doSave() {
     let matchedCount = 0;
 
     allRows.forEach((rec, i) => {
-      const hit = matchEmployee(rec, emps);
-      if (hit) {
+      const result = matchEmployee(rec, emps);
+      if (result) {
+        const { emp: hit, score } = result;
         const row = ws.getRow(hit.rn);
         const v1  = rec.d1_15  !== '' && rec.d1_15  != null ? Number(rec.d1_15)  : NaN;
         const v2  = rec.d16_31 !== '' && rec.d16_31 != null ? Number(rec.d16_31) : NaN;
@@ -577,9 +579,14 @@ async function doSave() {
         row.commit();
         rec._matched   = true;
         rec._masterRow = hit.rn;
+        rec._matchName = `${hit.last}, ${hit.first}`;
         matchedCount++;
+        const pct = Math.round(score*100);
         const tag = document.getElementById('tag'+i);
-        tag.className='tag t-ok'; tag.textContent='✓ Row '+hit.rn;
+        // yellow warning if fuzzy match (< 90%)
+        tag.className = 'tag ' + (pct >= 90 ? 't-ok' : 't-fuzzy');
+        tag.title = `Masterlist: ${hit.last}, ${hit.first} | ${hit.branch}`;
+        tag.textContent = `✓ Row ${hit.rn} (${pct}%)`;
       } else {
         rec._matched = false;
         unmatched.push({ name: rec.name, branch: rec.branch });
@@ -626,34 +633,96 @@ async function doSave() {
 // ── Name / branch matching ─────────────────────────────────────────────────────
 function norm(s) {
   return (s||'').toLowerCase()
-    .replace(/[^a-z0-9 ]/g,'')
-    .replace(/\bjr?\b\.?/g,'')
+    .replace(/[^a-z0-9 ]/g,' ')
+    .replace(/\bjr?\.?\b/g,'')
     .replace(/\s+/g,' ').trim();
 }
-function branchScore(a, b) {
-  const na=norm(a), nb=norm(b);
-  if (na===nb) return 1;
-  if (na.includes(nb)||nb.includes(na)) return .9;
-  const ta=new Set(na.split(' ')), tb=new Set(nb.split(' '));
-  const ix=[...ta].filter(t=>tb.has(t)).length;
-  return ix/Math.max(ta.size,tb.size);
+function normBranch(s) {
+  return (s||'').toLowerCase()
+    .replace(/\b(branch|store|mall|center|centre|bldg|building|floor|flr|level|lvl|inc|corp|ph)\b/g,'')
+    .replace(/[^a-z0-9 ]/g,' ')
+    .replace(/\s+/g,' ').trim();
 }
+
+// Levenshtein edit distance
+function editDist(a, b) {
+  const m=a.length, n=b.length;
+  const dp=[];
+  for (let i=0;i<=m;i++) { dp[i]=[i]; }
+  for (let j=0;j<=n;j++) { dp[0][j]=j; }
+  for (let i=1;i<=m;i++) for (let j=1;j<=n;j++)
+    dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+  return dp[m][n];
+}
+
+// Character-level similarity 0–1
+function strSim(a, b) {
+  if (!a||!b) return 0;
+  if (a===b) return 1;
+  if (a.includes(b)||b.includes(a)) return 0.92;
+  const d = editDist(a, b);
+  return Math.max(0, 1 - d / Math.max(a.length, b.length, 1));
+}
+
+// Best similarity of one word against a list of words
+function bestWordSim(word, words) {
+  if (!words.length) return 0;
+  return Math.max(...words.map(w => strSim(word, w)));
+}
+
+function branchScore(a, b) {
+  const na = normBranch(a), nb = normBranch(b);
+  if (!na || !nb) return 0.35; // unknown branch — partial credit
+  if (na === nb) return 1;
+  if (na.includes(nb) || nb.includes(na)) return 0.92;
+  const wa = na.split(' ').filter(w=>w.length>1);
+  const wb = nb.split(' ').filter(w=>w.length>1);
+  if (!wa.length || !wb.length) return strSim(na, nb);
+  // each word in wa finds best fuzzy match in wb
+  let total = 0;
+  for (const w of wa) total += bestWordSim(w, wb);
+  return total / Math.max(wa.length, wb.length);
+}
+
 function matchEmployee(rec, emps) {
   const fn = norm(rec.name||'');
-  const fw = fn.split(' ').filter(Boolean);
-  if (!fw.length) return null;
+  const nameWords = fn.split(' ').filter(Boolean);
+  if (!nameWords.length) return null;
+
   let best=null, bestS=0;
   for (const e of emps) {
-    const ln=norm(e.last);
+    const ln = norm(e.last);
     if (!ln) continue;
-    if (!fw.includes(ln) && !fn.includes(ln)) continue;
-    const firstW = norm(e.first).split(' ').filter(Boolean);
-    const fmatch = firstW.some(w=>fn.includes(w)) ? 1 : 0;
+
+    // ── Last name similarity ──────────────────────────────────────────────────
+    // Try every word in the extracted name against the masterlist last name
+    const lastSim = Math.max(...nameWords.map(w => strSim(w, ln)));
+    // Also try full extracted name vs last name (handles "DELA CRUZ" type last names)
+    const fullVsLast = strSim(fn, ln);
+    const bestLast = Math.max(lastSim, fullVsLast);
+
+    // Last name must be at least 65% similar (handles 1–2 character OCR typos)
+    if (bestLast < 0.65) continue;
+
+    // ── First name similarity ─────────────────────────────────────────────────
+    const firstWords = norm(e.first).split(' ').filter(Boolean);
+    let firstSim = 0;
+    if (firstWords.length) {
+      // best match of any first-name word against any extracted-name word
+      firstSim = Math.max(...firstWords.map(fw => bestWordSim(fw, nameWords)));
+    }
+
+    // ── Branch similarity ─────────────────────────────────────────────────────
     const bs = branchScore(rec.branch||'', e.branch);
-    const sc = (1+fmatch)*(0.5+bs);
-    if (sc>bestS) { bestS=sc; best=e; }
+
+    // ── Combined score ────────────────────────────────────────────────────────
+    // Last name weighted most (×3), first name (×1.5), branch (×1.5)
+    const sc = (bestLast*3 + firstSim*1.5 + bs*1.5) / 6;
+
+    if (sc > bestS) { bestS=sc; best=e; }
   }
-  return bestS>=0.8 ? best : null;
+  // Threshold 0.60 — accepts moderate fuzzy matches
+  return bestS >= 0.60 ? { emp: best, score: bestS } : null;
 }
 
 // ── Util ───────────────────────────────────────────────────────────────────────
