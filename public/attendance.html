@@ -163,14 +163,18 @@ hr.div{border:none;border-top:1px solid #eceff1;margin:20px 0;}
 
   <!-- API Key bar -->
   <div class="apibar">
-    <label>🔑 Google Gemini API Key:</label>
-    <input type="password" id="api-key" placeholder="AIza..." autocomplete="off"/>
+    <label>🔑 API Key:</label>
+    <select id="api-provider" onchange="switchProvider()" style="border:1px solid #c7d4f0;border-radius:6px;padding:7px 10px;font-size:.85rem;background:#fff;">
+      <option value="groq">Groq (FREE – recommended)</option>
+      <option value="gemini">Google Gemini (FREE)</option>
+    </select>
+    <input type="password" id="api-key" placeholder="gsk_..." autocomplete="off"/>
     <button class="save-key" onclick="saveKey()">Save Key</button>
     <span class="key-ok" id="key-ok" style="display:none">✓ Key saved</span>
-    <span style="font-size:.75rem;color:#607d8b;flex-basis:100%;">
+    <span id="api-hint" style="font-size:.75rem;color:#607d8b;flex-basis:100%;">
       LIBRE — kuhanin sa
-      <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#1a3c6e;font-weight:700;">aistudio.google.com/apikey</a>
-      &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito
+      <a href="https://console.groq.com/keys" target="_blank" style="color:#1a3c6e;font-weight:700;">console.groq.com/keys</a>
+      &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito &nbsp;|&nbsp; 30 req/min, 1000/day
     </span>
   </div>
 
@@ -270,17 +274,35 @@ let xlData   = null;   // parsed masterlist {employees:[{rn,last,first,branch}],
 document.getElementById('month-lbl').textContent =
   new Date().toLocaleString('en-PH',{month:'long',year:'numeric'}).toUpperCase();
 
-// Load saved API key
-const saved = localStorage.getItem('ph_gemini_key');
-if (saved) {
-  document.getElementById('api-key').value = saved;
-  document.getElementById('key-ok').style.display = '';
+// Load saved keys
+const savedGroq   = localStorage.getItem('ph_groq_key');
+const savedGemini = localStorage.getItem('ph_gemini_key');
+if (savedGroq) { document.getElementById('api-key').value = savedGroq; document.getElementById('key-ok').style.display=''; }
+
+function switchProvider() {
+  const p = document.getElementById('api-provider').value;
+  const inp = document.getElementById('api-key');
+  const hint = document.getElementById('api-hint');
+  document.getElementById('key-ok').style.display='none';
+  if (p === 'groq') {
+    inp.placeholder = 'gsk_...';
+    const k = localStorage.getItem('ph_groq_key') || '';
+    inp.value = k;
+    hint.innerHTML = 'LIBRE — kuhanin sa <a href="https://console.groq.com/keys" target="_blank" style="color:#1a3c6e;font-weight:700;">console.groq.com/keys</a> &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito &nbsp;| 30 req/min, 1000/day';
+  } else {
+    inp.placeholder = 'AIza...';
+    const k = localStorage.getItem('ph_gemini_key') || '';
+    inp.value = k;
+    hint.innerHTML = 'LIBRE — kuhanin sa <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#1a3c6e;font-weight:700;">aistudio.google.com/apikey</a> &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito';
+  }
+  if (document.getElementById('api-key').value) document.getElementById('key-ok').style.display='';
 }
 
 function saveKey() {
   const k = document.getElementById('api-key').value.trim();
   if (!k) return;
-  localStorage.setItem('ph_gemini_key', k);
+  const p = document.getElementById('api-provider').value;
+  localStorage.setItem(p === 'groq' ? 'ph_groq_key' : 'ph_gemini_key', k);
   document.getElementById('key-ok').style.display = '';
 }
 
@@ -371,20 +393,26 @@ async function doExtract() {
     }
 
     try {
-      const b64  = await fileToBase64(imgFiles[i]);
-      const mime = imgFiles[i].type;
-      const rows = await callGemini(key, b64, mime);
+      const b64      = await fileToBase64(imgFiles[i]);
+      const mime     = imgFiles[i].type;
+      const provider = document.getElementById('api-provider').value;
+      const rows     = provider === 'groq'
+        ? await callGroq(key, b64, mime)
+        : await callGemini(key, b64, mime);
       rows.forEach(r => { r._page = i+1; });
       allRows = allRows.concat(rows);
     } catch(e) {
       console.error('Page '+(i+1)+' error:', e);
       // if rate limited, wait longer and retry once
-      if (e.message.includes('429') || e.message.toLowerCase().includes('quota')) {
+      if (e.message.includes('429') || e.message.toLowerCase().includes('quota') || e.message.includes('rate_limit')) {
         showStatus(`⏳ Rate limit hit — waiting 65s then retrying page ${i+1}...`, 'warn');
         await new Promise(r => setTimeout(r, 65000));
         try {
-          const b64  = await fileToBase64(imgFiles[i]);
-          const rows = await callGemini(key, b64, imgFiles[i].type);
+          const b64      = await fileToBase64(imgFiles[i]);
+          const provider = document.getElementById('api-provider').value;
+          const rows     = provider === 'groq'
+            ? await callGroq(key, b64, imgFiles[i].type)
+            : await callGemini(key, b64, imgFiles[i].type);
           rows.forEach(r => { r._page = i+1; });
           allRows = allRows.concat(rows);
         } catch(e2) {
@@ -479,6 +507,61 @@ Rules:
   } catch(e) {
     throw new Error('JSON parse error: ' + e.message + ' | Raw: ' + raw.slice(0,120));
   }
+
+  return parsed.rows || [];
+}
+
+async function callGroq(apiKey, imgBase64, mimeType) {
+  const prompt = `You are an expert at reading Philippine retail store attendance sheets.
+Extract ALL employee records from this attendance photo.
+
+Return ONLY valid JSON — no markdown, no explanation, no extra text:
+{"rows":[{"branch":"branch name","name":"FULL NAME UPPERCASE","d1_15":13,"d16_31":14}]}
+
+Rules:
+- branch: copy exactly as shown in the sheet
+- name: UPPERCASE full name as written
+- d1_15: number in first attendance column (days 1-15). Use null if blank.
+- d16_31: number in second attendance column (days 16-31). Use null if blank.
+- Include every single person, do not skip anyone
+- Ignore empty/blank rows
+- Return ONLY the JSON object, nothing else`;
+
+  const body = {
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imgBase64}` } },
+        { type: 'text', text: prompt }
+      ]
+    }],
+    temperature: 0,
+    max_tokens: 8192
+  };
+
+  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify(body)
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${resp.status}`);
+  }
+
+  const data = await resp.json();
+  let raw = (data.choices?.[0]?.message?.content || '').trim();
+  if (!raw) throw new Error('Empty response from Groq.');
+
+  raw = raw.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/i,'');
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in response: ' + raw.slice(0,120));
+
+  let parsed;
+  try { parsed = JSON.parse(jsonMatch[0]); }
+  catch(e) { throw new Error('JSON parse error: ' + e.message + ' | Raw: ' + raw.slice(0,120)); }
 
   return parsed.rows || [];
 }
