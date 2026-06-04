@@ -339,68 +339,73 @@ function renderThumbs() {
 // ── Step 3: Extract via Google Gemini API (FREE) ──────────────────────────────
 async function doExtract() {
   const key = document.getElementById('api-key').value.trim();
-  if (!key) { showStatus('I-enter muna ang iyong Google Gemini API key sa taas.','err'); return; }
+  if (!key) {
+    showStatus('I-enter muna ang iyong Google Gemini API key sa taas.','err');
+    scrollToStatus(); return;
+  }
   if (imgFiles.length === 0) return;
 
   const btn = document.getElementById('btn-extract');
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Analyzing...';
   allRows = [];
   showProg(true); setStep(3);
+  scrollToStatus();
 
-  let done = 0;
+  const errors = [];
   for (let i = 0; i < imgFiles.length; i++) {
-    setProg(Math.round((i/imgFiles.length)*90), `Analyzing page ${i+1} of ${imgFiles.length}...`);
-    showStatus(`Sending page ${i+1} to AI...`, 'info');
+    setProg(Math.round(((i+0.5)/imgFiles.length)*90), `Analyzing page ${i+1} of ${imgFiles.length}...`);
+    showStatus(`🔍 Analyzing page ${i+1} of ${imgFiles.length}... please wait.`, 'info');
     try {
       const b64  = await fileToBase64(imgFiles[i]);
       const mime = imgFiles[i].type;
       const rows = await callGemini(key, b64, mime);
       rows.forEach(r => { r._page = i+1; });
       allRows = allRows.concat(rows);
-      done++;
     } catch(e) {
-      showStatus(`Page ${i+1} error: ${e.message}`, 'err');
+      console.error('Page '+(i+1)+' error:', e);
+      errors.push(`Page ${i+1}: ${e.message}`);
     }
   }
 
   setProg(100,'Done!');
-  setTimeout(() => showProg(false), 700);
+  setTimeout(() => showProg(false), 800);
+  btn.disabled=false; btn.innerHTML='🤖 Re-Extract';
 
   if (allRows.length === 0) {
-    showStatus('No records extracted. Check images.','err');
-    btn.disabled=false; btn.innerHTML='🤖 Extract Attendance Data';
+    const errMsg = errors.length
+      ? 'Error:\n' + errors.join('\n')
+      : 'Walang na-extract. Subukan mo ulit.';
+    showStatus('❌ ' + errMsg, 'err');
+    scrollToStatus();
     return;
   }
 
+  if (errors.length) {
+    showStatus(`⚠️ ${allRows.length} records extracted pero may error sa ${errors.length} page(s): ${errors.join(' | ')}`, 'warn');
+  } else {
+    showStatus(`✅ ${allRows.length} employees extracted mula sa ${imgFiles.length} photo(s). I-review tapos i-save.`, 'ok');
+  }
+
   renderResults();
-  showStatus(`✓ Extracted ${allRows.length} records from ${done} photo(s). Review then save.`, 'ok');
   setStep(4);
-  btn.disabled=false; btn.innerHTML='🤖 Re-Extract';
+  scrollToStatus();
 }
 
 async function callGemini(apiKey, imgBase64, mimeType) {
   const prompt = `You are an expert at reading Philippine retail store attendance sheets.
 Extract ALL employee records from this attendance photo.
 
-Return ONLY valid JSON — no markdown, no explanation:
-{
-  "rows": [
-    {
-      "branch": "branch name as written",
-      "name": "FULL NAME in uppercase",
-      "d1_15": <number or null>,
-      "d16_31": <number or null>
-    }
-  ]
-}
+Return ONLY valid JSON — no markdown, no explanation, no extra text:
+{"rows":[{"branch":"branch name","name":"FULL NAME UPPERCASE","d1_15":13,"d16_31":14}]}
 
 Rules:
-- branch: copy exactly as shown
+- branch: copy exactly as shown in the sheet
 - name: UPPERCASE full name as written
-- d1_15: first number column (days 1-15). null if blank.
-- d16_31: second number column (days 16-31 or labeled 1-31). null if blank.
-- Include EVERY person, skip empty rows
-- Return pure JSON only`;
+- d1_15: the number in the first attendance column (days 1-15). Use null if blank.
+- d16_31: the number in the second attendance column (days 16-31). Use null if blank.
+- Include every single person listed, do not skip anyone
+- Ignore empty/blank rows
+- Return ONLY the JSON object, nothing else`;
 
   const body = {
     contents: [{
@@ -409,7 +414,7 @@ Rules:
         { text: prompt }
       ]
     }],
-    generationConfig: { temperature: 0, maxOutputTokens: 4096 }
+    generationConfig: { temperature: 0, maxOutputTokens: 8192 }
   };
 
   const resp = await fetch(
@@ -419,14 +424,33 @@ Rules:
 
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    const msg = err.error?.message || `API error ${resp.status}`;
-    throw new Error(msg);
+    throw new Error(err.error?.message || `API error ${resp.status}`);
   }
 
   const data = await resp.json();
-  const raw  = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim()
-    .replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/i,'');
-  const parsed = JSON.parse(raw);
+
+  // check for blocked/safety response
+  const candidate = data.candidates?.[0];
+  if (!candidate) throw new Error('No response from Gemini. Check your API key.');
+  if (candidate.finishReason === 'SAFETY') throw new Error('Blocked by safety filter.');
+
+  let raw = (candidate.content?.parts?.[0]?.text || '').trim();
+  if (!raw) throw new Error('Empty response from Gemini.');
+
+  // strip markdown fences if any
+  raw = raw.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/i,'');
+
+  // extract JSON object from response (in case there's surrounding text)
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in response: ' + raw.slice(0,120));
+
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch(e) {
+    throw new Error('JSON parse error: ' + e.message + ' | Raw: ' + raw.slice(0,120));
+  }
+
   return parsed.rows || [];
 }
 
@@ -459,7 +483,9 @@ function renderResults() {
     c.addEventListener('input', () => { allRows[+c.dataset.i][c.dataset.f] = c.textContent.trim(); });
   });
   document.getElementById('result-sec').style.display = '';
-  document.getElementById('result-sec').scrollIntoView({ behavior:'smooth', block:'start' });
+  setTimeout(() => {
+    document.getElementById('result-sec').scrollIntoView({ behavior:'smooth', block:'start' });
+  }, 200);
 }
 
 // ── Step 4: Save ───────────────────────────────────────────────────────────────
@@ -610,6 +636,11 @@ function downloadBuf(buf, name) {
 function showStatus(msg, type) {
   const el=document.getElementById('status');
   el.textContent=msg; el.className='s-'+type; el.style.display='';
+}
+function scrollToStatus() {
+  setTimeout(() => {
+    document.getElementById('status').scrollIntoView({ behavior:'smooth', block:'center' });
+  }, 100);
 }
 function showProg(v) { document.getElementById('prog').style.display=v?'':'none'; }
 function setProg(p,t) {
