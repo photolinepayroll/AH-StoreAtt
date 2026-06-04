@@ -427,8 +427,14 @@ async function doExtract() {
       allRows = allRows.concat(rows);
     } catch(e) {
       console.error('Page '+(i+1)+' error:', e);
-      const isQuota = e.message.includes('429') || e.message.toLowerCase().includes('rate limit') || e.message.includes('rate_limit') || e.message.toLowerCase().includes('too many');
-      if (isQuota) {
+      const isTPD   = e.message.toLowerCase().includes('per day') || e.message.toLowerCase().includes('tpd');
+      const isQuota = !isTPD && (e.message.includes('429') || e.message.toLowerCase().includes('rate limit') || e.message.includes('rate_limit') || e.message.toLowerCase().includes('too many'));
+      if (isTPD) {
+        // Daily token limit exhausted — no point retrying, stop loop and show what we have
+        showStatus(`⛔ Groq daily token limit (500,000/day) naubos na. Bukas mag-re-reset. Ipapakita ang ${allRows.length} records mula sa ${i} page(s) na na-process.`, 'err');
+        errors.push(`Page ${i+1}–${imgFiles.length}: Daily limit reached — resume tomorrow`);
+        break; // stop processing remaining pages
+      } else if (isQuota) {
         // Parse retry time from Groq error: "Please try again in 12.5s"
         const retryMatch = e.message.match(/try again in ([\d.]+)s/i);
         const retrySec = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) + 3 : 65;
@@ -452,11 +458,14 @@ async function doExtract() {
   setTimeout(() => showProg(false), 800);
   btn.disabled=false; btn.innerHTML='🤖 Re-Extract';
 
+  const hitDailyLimit = errors.some(e => e.includes('Daily limit reached'));
+
   if (allRows.length === 0) {
-    const errMsg = errors.length
-      ? 'Error:\n' + errors.join('\n')
-      : 'Walang na-extract. Subukan mo ulit.';
-    showStatus('❌ ' + errMsg, 'err');
+    if (hitDailyLimit) {
+      showStatus('⛔ Groq daily token limit naubos (500,000/day). Walang nai-process. Bukas mag-re-reset ang limit ng 12MN UTC (8AM PH time). Pwede ring gumawa ng bagong Groq account para sa additional 500,000 tokens.', 'err');
+    } else {
+      showStatus('❌ ' + (errors.length ? errors.join(' | ') : 'Walang na-extract. Subukan mo ulit.'), 'err');
+    }
     scrollToStatus();
     return;
   }
@@ -795,7 +804,7 @@ function styleC(cell) {
 
 // Compress + enhance image before sending to AI
 // enhance=true: boost contrast & sharpen for hard-to-read sheets
-function compressImage(file, maxPx=1200, quality=0.78, enhance=true) {
+function compressImage(file, maxPx=1000, quality=0.72, enhance=true) {
   return new Promise((res, rej) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
