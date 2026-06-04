@@ -235,7 +235,8 @@ function goStep2(){setStep(2);document.getElementById('div12').style.display='';
 function addImgs(files){imgFiles=imgFiles.concat(files.filter(f=>f.type.startsWith('image/')));renderThumbs();document.getElementById('btn-extract').disabled=imgFiles.length===0;}
 function clearImgs(){imgFiles=[];renderThumbs();document.getElementById('btn-extract').disabled=true;}
 function removeImg(i){imgFiles.splice(i,1);renderThumbs();document.getElementById('btn-extract').disabled=imgFiles.length===0;}
-function renderThumbs(){const w=document.getElementById('thumbs');w.innerHTML='';imgFiles.forEach((f,i)=>{const url=URL.createObjectURL(f);const d=document.createElement('div');d.className='thumb';d.innerHTML=`<img src="${url}"><span class="pg">P${i+1}</span><button class="rm" onclick="removeImg(${i})">✕</button><div class="nm">${esc(f.name)}</div>`;w.appendChild(d);});const box=document.getElementById('img-box');if(imgFiles.length){box.classList.add('filled');box.querySelector('p').innerHTML=`<strong>${imgFiles.length} photo${imgFiles.length>1?'s':''} loaded</strong><br><span style="font-size:.75rem">Click/drop to add more</span>`;}else{box.classList.remove('filled');box.querySelector('p').innerHTML=`<strong>Click here</strong> or drag &amp; drop<br>Pwede <strong>marami</strong> (Page 1, Page 2, etc.)`;}}
+function renderThumbs(){const w=document.getElementById('thumbs');w.innerHTML='';imgFiles.forEach((f,i)=>{const url=URL.createObjectURL(f);const d=document.createElement('div');d.className='thumb';d.innerHTML=`<img src="${url}"><span class="pg">P${i+1}</span><button class="rm" onclick="removeImg(${i})">✕</button><div class="nm">${esc(f.name)}</div>`;w.appendChild(d);});const box=document.getElementById('img-box');if(imgFiles.length){box.classList.add('filled');box.querySelector('p').innerHTML=`<strong>${imgFiles.length} photo${imgFiles.length>1?'s':''} loaded</strong><br><span style="font-size:.75rem">Click/drop to add more</span>`;}else{box.classList.remove('filled');box.querySelector('p').innerHTML=`<strong>Click here</strong> or drag &amp; drop<br>Pwede <strong>marami</strong> (Page 1, Page 2, etc.)`;}
+}
 async function doExtract(){
   const key=document.getElementById('api-key').value.trim();
   if(!key){showStatus('I-enter muna ang iyong Google Gemini API key sa taas.','err');return;}
@@ -290,7 +291,7 @@ Rules:
 - Ignore empty/blank rows
 - Return ONLY the JSON object, nothing else`;
   const body={contents:[{parts:[{inline_data:{mime_type:mimeType,data:imgBase64}},{text:prompt}]}],generationConfig:{temperature:0,maxOutputTokens:8192}};
-  const resp=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const resp=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
   if(!resp.ok){const err=await resp.json().catch(()=>({}));throw new Error(err.error?.message||`API error ${resp.status}`);}
   const data=await resp.json();
   const candidate=data.candidates?.[0];
