@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Photoline – Attendance Tool</title>
+<!-- ExcelJS for reading/writing Excel directly in browser -->
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#eef2f7;min-height:100vh;padding:20px 10px;}
+.wrap{max-width:1000px;margin:0 auto;}
+.topbar{
+  background:linear-gradient(135deg,#1a3c6e,#2563b0);
+  color:#fff;border-radius:12px 12px 0 0;
+  padding:16px 24px;display:flex;align-items:center;justify-content:space-between;
+}
+.topbar h1{font-size:1.2rem;display:flex;align-items:center;gap:8px;}
+.topbar .sub{font-size:.75rem;opacity:.75;margin-top:2px;}
+.card{background:#fff;border-radius:0 0 12px 12px;box-shadow:0 4px 24px rgba(0,0,0,.1);padding:24px;}
+
+/* api key bar */
+.apibar{
+  background:#f3f6ff;border:1px solid #c7d4f0;border-radius:8px;
+  padding:12px 16px;display:flex;align-items:center;gap:10px;margin-bottom:20px;
+  flex-wrap:wrap;
+}
+.apibar label{font-size:.82rem;font-weight:700;color:#1a3c6e;white-space:nowrap;}
+.apibar input{
+  flex:1;min-width:220px;border:1px solid #c7d4f0;border-radius:6px;
+  padding:7px 10px;font-size:.85rem;font-family:monospace;
+}
+.apibar .save-key{
+  background:#1a3c6e;color:#fff;border:none;border-radius:6px;
+  padding:7px 14px;font-size:.82rem;font-weight:700;cursor:pointer;white-space:nowrap;
+}
+.apibar .key-ok{font-size:.78rem;color:#2e7d32;font-weight:600;}
+
+/* steps */
+.steps{display:flex;margin-bottom:22px;}
+.step{flex:1;text-align:center;padding:8px 4px;border-bottom:3px solid #dde3f0;color:#90a4b4;font-size:.75rem;font-weight:600;}
+.step.active{border-bottom-color:#1a3c6e;color:#1a3c6e;}
+.step.done{border-bottom-color:#43a047;color:#43a047;}
+.step .num{
+  width:24px;height:24px;border-radius:50%;background:#dde3f0;color:#607d8b;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:.8rem;font-weight:800;margin-bottom:3px;
+}
+.step.active .num{background:#1a3c6e;color:#fff;}
+.step.done .num{background:#43a047;color:#fff;}
+
+.sec{font-size:.92rem;font-weight:700;color:#1a3c6e;margin-bottom:10px;
+  padding-left:9px;border-left:4px solid #1a3c6e;}
+
+/* upload boxes */
+.uprow{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;}
+.upbox{
+  flex:1;min-width:240px;border:2px dashed #b0bec5;border-radius:10px;
+  padding:26px 14px;text-align:center;cursor:pointer;
+  transition:.2s;position:relative;
+}
+.upbox:hover,.upbox.over{border-color:#1a3c6e;background:#eef3ff;}
+.upbox.filled{border-color:#43a047;background:#f1fdf3;}
+.upbox input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+.upbox .ico{font-size:2.2rem;margin-bottom:7px;}
+.upbox p{color:#607d8b;font-size:.84rem;line-height:1.5;}
+.upbox p strong{color:#1a3c6e;}
+.upbox.filled p strong{color:#2e7d32;}
+
+/* thumbnails */
+.thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
+.thumb{position:relative;width:100px;}
+.thumb img{width:100px;height:72px;object-fit:cover;border-radius:6px;border:2px solid #dde3f0;}
+.thumb .pg{position:absolute;top:3px;left:3px;background:#1a3c6e;color:#fff;
+  font-size:.6rem;font-weight:800;padding:2px 6px;border-radius:3px;}
+.thumb .rm{position:absolute;top:2px;right:2px;background:#e53935;color:#fff;
+  border:none;border-radius:50%;width:18px;height:18px;cursor:pointer;
+  font-size:.75rem;display:flex;align-items:center;justify-content:center;}
+.thumb .nm{font-size:.62rem;color:#607d8b;margin-top:2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:7px;padding:10px 20px;
+  border:none;border-radius:8px;font-size:.88rem;font-weight:700;cursor:pointer;transition:.12s;}
+.btn:active{transform:scale(.97);}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+.btn-blue{background:#1a3c6e;color:#fff;}
+.btn-blue:hover:not(:disabled){background:#143160;}
+.btn-green{background:#2e7d32;color:#fff;}
+.btn-green:hover:not(:disabled){background:#1b5e20;}
+.btn-ghost{background:transparent;color:#1a3c6e;border:2px solid #1a3c6e;padding:8px 18px;}
+.btn-ghost:hover:not(:disabled){background:#eef3ff;}
+.acts{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px;}
+
+/* status — fixed toast at top */
+#status{
+  display:none;
+  position:fixed;top:12px;left:50%;transform:translateX(-50%);
+  z-index:9999;min-width:320px;max-width:90vw;
+  padding:14px 20px;border-radius:10px;font-size:.92rem;font-weight:600;
+  box-shadow:0 4px 20px rgba(0,0,0,.25);text-align:center;
+  animation:slideDown .3s ease;
+}
+@keyframes slideDown{from{top:-60px;opacity:0}to{top:12px;opacity:1}}
+.s-info{background:#1565c0;color:#fff;}
+.s-ok{background:#2e7d32;color:#fff;}
+.s-err{background:#c62828;color:#fff;}
+.s-warn{background:#e65100;color:#fff;}
+
+/* progress */
+.prog{display:none;margin:12px 0;}
+.prog-bar{background:#e0e7f0;border-radius:8px;height:9px;overflow:hidden;}
+.prog-fill{background:#1a3c6e;height:100%;width:0;transition:width .3s;border-radius:8px;}
+.prog-txt{font-size:.78rem;color:#607d8b;margin-top:4px;text-align:center;}
+
+/* summary */
+.summary{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:14px;}
+.sc{flex:1;min-width:100px;background:#f5f7ff;border-radius:8px;
+  padding:11px 8px;text-align:center;border:1px solid #dde3f0;}
+.sc .n{font-size:1.8rem;font-weight:800;color:#1a3c6e;}
+.sc .l{font-size:.7rem;color:#78909c;margin-top:1px;}
+
+/* table */
+.tbl-wrap{overflow-x:auto;border-radius:8px;border:1px solid #dde3f0;}
+table{width:100%;border-collapse:collapse;font-size:.82rem;}
+th{background:#1a3c6e;color:#fff;padding:8px 9px;text-align:left;white-space:nowrap;}
+td{padding:7px 9px;border-bottom:1px solid #eceff1;vertical-align:middle;}
+tr:nth-child(even) td{background:#f9fbff;}
+tr:hover td{background:#eef3ff;}
+td[contenteditable="true"]:focus{background:#fffde7;outline:2px solid #ffca28;}
+.tag{display:inline-block;padding:3px 8px;border-radius:10px;font-size:.7rem;font-weight:700;}
+.t-ok{background:#c8e6c9;color:#1b5e20;}
+.t-no{background:#fff3e0;color:#e65100;}
+.pg-chip{background:#e8eaf6;color:#3949ab;font-size:.68rem;padding:2px 6px;border-radius:8px;font-weight:700;}
+select.sel{border:1px solid #cfd8dc;border-radius:5px;padding:3px 7px;font-size:.78rem;}
+
+.unmatch{background:#fff8e1;border:1px solid #ffcc80;border-radius:8px;
+  padding:12px 15px;margin-top:12px;font-size:.85rem;color:#e65100;}
+.unmatch ul{margin-top:5px;padding-left:16px;}
+.unmatch li{margin-bottom:2px;}
+
+.spin{width:14px;height:14px;border:3px solid rgba(255,255,255,.35);
+  border-top-color:#fff;border-radius:50%;animation:sp .6s linear infinite;
+  display:inline-block;flex-shrink:0;}
+@keyframes sp{to{transform:rotate(360deg);}}
+
+#result-sec{display:none;margin-top:20px;}
+hr.div{border:none;border-top:1px solid #eceff1;margin:20px 0;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="topbar">
+  <div>
+    <h1>📋 Photoline – Attendance Tool</h1>
+    <div class="sub">Upload photos → AI extracts data → Update your Masterlist</div>
+  </div>
+  <div style="font-size:.8rem;opacity:.8;" id="month-lbl"></div>
+</div>
+
+<div class="card">
+
+  <!-- API Key bar -->
+  <div class="apibar">
+    <label>🔑 API Key:</label>
+    <select id="api-provider" onchange="switchProvider()" style="border:1px solid #c7d4f0;border-radius:6px;padding:7px 10px;font-size:.85rem;background:#fff;">
+      <option value="groq">Groq (FREE – recommended)</option>
+      <option value="gemini">Google Gemini (FREE)</option>
+    </select>
+    <input type="password" id="api-key" placeholder="gsk_..." autocomplete="off"/>
+    <button class="save-key" onclick="saveKey()">Save Key</button>
+    <span class="key-ok" id="key-ok" style="display:none">✓ Key saved</span>
+    <span id="api-hint" style="font-size:.75rem;color:#607d8b;flex-basis:100%;">
+      LIBRE — kuhanin sa
+      <a href="https://console.groq.com/keys" target="_blank" style="color:#1a3c6e;font-weight:700;">console.groq.com/keys</a>
+      &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito &nbsp;|&nbsp; 30 req/min, 1000/day
+    </span>
+  </div>
+
+  <!-- Steps -->
+  <div class="steps">
+    <div class="step active" id="s1"><div class="num">1</div><br>Masterlist</div>
+    <div class="step" id="s2"><div class="num">2</div><br>Photos</div>
+    <div class="step" id="s3"><div class="num">3</div><br>Extract</div>
+    <div class="step" id="s4"><div class="num">4</div><br>Download</div>
+  </div>
+
+  <!-- Step 1: Masterlist -->
+  <div id="step1">
+    <div class="sec">Step 1 — Upload Masterlist Excel (.xlsx)</div>
+    <div class="uprow">
+      <div class="upbox" id="xl-box">
+        <input type="file" id="xl-inp" accept=".xlsx,.xls"/>
+        <div class="ico">📊</div>
+        <p><strong>Click here</strong> or drag &amp; drop<br>your <strong>Masterlist.xlsx</strong></p>
+      </div>
+    </div>
+    <div class="acts">
+      <button class="btn btn-blue" id="btn-step2" onclick="goStep2()" disabled>
+        Next: Upload Photos →
+      </button>
+    </div>
+  </div>
+
+  <hr class="div" id="div12" style="display:none"/>
+
+  <!-- Step 2: Photos -->
+  <div id="step2" style="display:none">
+    <div class="sec">Step 2 — Upload Attendance Photos (multiple pages OK)</div>
+    <div class="uprow">
+      <div class="upbox" id="img-box">
+        <input type="file" id="img-inp" accept="image/jpeg,image/jpg,image/png" multiple/>
+        <div class="ico">🖼️</div>
+        <p><strong>Click here</strong> or drag &amp; drop<br>
+          Pwede <strong>marami</strong> (Page 1, Page 2, etc.)</p>
+      </div>
+    </div>
+    <div class="thumbs" id="thumbs"></div>
+    <div class="acts">
+      <button class="btn btn-blue" id="btn-extract" onclick="doExtract()" disabled>
+        🤖 Extract Attendance Data
+      </button>
+      <button class="btn btn-ghost" onclick="clearImgs()">✕ Clear</button>
+    </div>
+  </div>
+
+  <!-- Floating save button (shows after extraction) -->
+  <div id="float-save" style="display:none;position:fixed;bottom:20px;right:20px;z-index:9998;">
+    <button class="btn btn-green" onclick="doSave()" style="font-size:1rem;padding:14px 22px;box-shadow:0 4px 16px rgba(0,0,0,.3);">
+      💾 I-SAVE &amp; DOWNLOAD EXCEL
+    </button>
+  </div>
+
+  <!-- Status & Progress -->
+  <div id="status" onclick="this.style.display='none'" title="Click to close" style="cursor:pointer"></div>
+  <div class="prog" id="prog">
+    <div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
+    <div class="prog-txt" id="prog-txt"></div>
+  </div>
+
+  <!-- Step 3+4: Results -->
+  <div id="result-sec">
+    <hr class="div"/>
+    <div class="sec">
+      Step 3 — Review Data
+      <span style="font-weight:400;font-size:.78rem;color:#90a4b4;"> (click any cell to edit)</span>
+    </div>
+    <div class="summary" id="summary"></div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Pg</th><th>Branch</th><th>Name</th>
+            <th>1–15</th><th>16–31</th><th>Status</th><th>Match</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div id="unmatch"></div>
+    <div class="acts" style="margin-top:18px;">
+      <button class="btn btn-green" id="btn-save" onclick="doSave()">
+        💾 Update Masterlist &amp; Download Excel
+      </button>
+      <button class="btn btn-ghost" onclick="resetAll()">↺ Start Over</button>
+    </div>
+  </div>
+
+</div><!-- /card -->
+</div><!-- /wrap -->
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────────
+let xlFile   = null;   // masterlist File
+let imgFiles = [];     // attendance image Files
+let allRows  = [];     // extracted rows
+let xlData   = null;   // parsed masterlist {employees:[{rn,last,first,branch}], workbook}
+
+// ── Init ───────────────────────────────────────────────────────────────────────
+document.getElementById('month-lbl').textContent =
+  new Date().toLocaleString('en-PH',{month:'long',year:'numeric'}).toUpperCase();
+
+// Load saved keys
+const savedGroq   = localStorage.getItem('ph_groq_key');
+const savedGemini = localStorage.getItem('ph_gemini_key');
+if (savedGroq) { document.getElementById('api-key').value = savedGroq; document.getElementById('key-ok').style.display=''; }
+
+function switchProvider() {
+  const p = document.getElementById('api-provider').value;
+  const inp = document.getElementById('api-key');
+  const hint = document.getElementById('api-hint');
+  document.getElementById('key-ok').style.display='none';
+  if (p === 'groq') {
+    inp.placeholder = 'gsk_...';
+    const k = localStorage.getItem('ph_groq_key') || '';
+    inp.value = k;
+    hint.innerHTML = 'LIBRE — kuhanin sa <a href="https://console.groq.com/keys" target="_blank" style="color:#1a3c6e;font-weight:700;">console.groq.com/keys</a> &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito &nbsp;| 30 req/min, 1000/day';
+  } else {
+    inp.placeholder = 'AIza...';
+    const k = localStorage.getItem('ph_gemini_key') || '';
+    inp.value = k;
+    hint.innerHTML = 'LIBRE — kuhanin sa <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#1a3c6e;font-weight:700;">aistudio.google.com/apikey</a> &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito';
+  }
+  if (document.getElementById('api-key').value) document.getElementById('key-ok').style.display='';
+}
+
+function saveKey() {
+  const k = document.getElementById('api-key').value.trim();
+  if (!k) return;
+  const p = document.getElementById('api-provider').value;
+  localStorage.setItem(p === 'groq' ? 'ph_groq_key' : 'ph_gemini_key', k);
+  document.getElementById('key-ok').style.display = '';
+}
+
+// ── Drag & drop helpers ────────────────────────────────────────────────────────
+function initDrop(id, cb) {
+  const el = document.getElementById(id);
+  el.addEventListener('dragover', e => { e.preventDefault(); el.classList.add('over'); });
+  el.addEventListener('dragleave', () => el.classList.remove('over'));
+  el.addEventListener('drop', e => { e.preventDefault(); el.classList.remove('over'); cb(e.dataTransfer.files); });
+}
+initDrop('xl-box',  f => handleXl(f[0]));
+initDrop('img-box', f => addImgs(Array.from(f)));
+document.getElementById('xl-inp').addEventListener('change', e => { if(e.target.files[0]) handleXl(e.target.files[0]); });
+document.getElementById('img-inp').addEventListener('change', e => { addImgs(Array.from(e.target.files)); e.target.value=''; });
+
+// ── Step 1: Masterlist ─────────────────────────────────────────────────────────
+function handleXl(file) {
+  xlFile = file;
+  const box = document.getElementById('xl-box');
+  box.classList.add('filled');
+  box.querySelector('p').innerHTML = `<strong>✓ ${esc(file.name)}</strong><br><span style="font-size:.75rem">${fmtSz(file.size)}</span>`;
+  document.getElementById('btn-step2').disabled = false;
+}
+
+function goStep2() {
+  setStep(2);
+  document.getElementById('div12').style.display = '';
+  document.getElementById('step2').style.display = '';
+}
+
+// ── Step 2: Images ─────────────────────────────────────────────────────────────
+function addImgs(files) {
+  imgFiles = imgFiles.concat(files.filter(f => f.type.startsWith('image/')));
+  renderThumbs();
+  document.getElementById('btn-extract').disabled = imgFiles.length === 0;
+}
+function clearImgs() {
+  imgFiles = [];
+  renderThumbs();
+  document.getElementById('btn-extract').disabled = true;
+}
+function removeImg(i) { imgFiles.splice(i,1); renderThumbs(); document.getElementById('btn-extract').disabled=imgFiles.length===0; }
+function renderThumbs() {
+  const w = document.getElementById('thumbs');
+  w.innerHTML = '';
+  imgFiles.forEach((f,i) => {
+    const url = URL.createObjectURL(f);
+    const d   = document.createElement('div'); d.className='thumb';
+    d.innerHTML = `<img src="${url}"><span class="pg">P${i+1}</span>
+      <button class="rm" onclick="removeImg(${i})">✕</button>
+      <div class="nm">${esc(f.name)}</div>`;
+    w.appendChild(d);
+  });
+  const box = document.getElementById('img-box');
+  if (imgFiles.length) {
+    box.classList.add('filled');
+    box.querySelector('p').innerHTML = `<strong>${imgFiles.length} photo${imgFiles.length>1?'s':''} loaded</strong><br><span style="font-size:.75rem">Click/drop to add more</span>`;
+  } else {
+    box.classList.remove('filled');
+    box.querySelector('p').innerHTML = `<strong>Click here</strong> or drag &amp; drop<br>Pwede <strong>marami</strong> (Page 1, Page 2, etc.)`;
+  }
+}
+
+// ── Step 3: Extract via Google Gemini API (FREE) ──────────────────────────────
+async function doExtract() {
+  const key = document.getElementById('api-key').value.trim();
+  if (!key) {
+    showStatus('I-enter muna ang iyong Google Gemini API key sa taas.','err');
+    scrollToStatus(); return;
+  }
+  if (imgFiles.length === 0) return;
+
+  const btn = document.getElementById('btn-extract');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> Analyzing...';
+  allRows = [];
+  showProg(true); setStep(3);
+  scrollToStatus();
+
+  const errors = [];
+  for (let i = 0; i < imgFiles.length; i++) {
+    setProg(Math.round(((i+0.5)/imgFiles.length)*90), `Analyzing page ${i+1} of ${imgFiles.length}...`);
+    showStatus(`🔍 Analyzing page ${i+1} of ${imgFiles.length}... please wait.`, 'info');
+
+    // wait between pages to avoid Gemini free-tier rate limit (15 req/min)
+    if (i > 0) {
+      showStatus(`⏳ Waiting 5s before page ${i+1} (free tier limit)...`, 'info');
+      await new Promise(r => setTimeout(r, 5000));
+    }
+
+    try {
+      const b64      = await fileToBase64(imgFiles[i]);
+      const mime     = imgFiles[i].type;
+      const provider = document.getElementById('api-provider').value;
+      const rows     = provider === 'groq'
+        ? await callGroq(key, b64, mime)
+        : await callGemini(key, b64, mime);
+      rows.forEach(r => { r._page = i+1; });
+      allRows = allRows.concat(rows);
+    } catch(e) {
+      console.error('Page '+(i+1)+' error:', e);
+      // if rate limited, wait longer and retry once
+      if (e.message.includes('429') || e.message.toLowerCase().includes('quota') || e.message.includes('rate_limit')) {
+        showStatus(`⏳ Rate limit hit — waiting 65s then retrying page ${i+1}...`, 'warn');
+        await new Promise(r => setTimeout(r, 65000));
+        try {
+          const b64      = await fileToBase64(imgFiles[i]);
+          const provider = document.getElementById('api-provider').value;
+          const rows     = provider === 'groq'
+            ? await callGroq(key, b64, mime)
+            : await callGemini(key, b64, mime);
+          rows.forEach(r => { r._page = i+1; });
+          allRows = allRows.concat(rows);
+        } catch(e2) {
+          errors.push(`Page ${i+1}: ${e2.message}`);
+        }
+      } else {
+        errors.push(`Page ${i+1}: ${e.message}`);
+      }
+    }
+  }
+
+  setProg(100,'Done!');
+  setTimeout(() => showProg(false), 800);
+  btn.disabled=false; btn.innerHTML='🤖 Re-Extract';
+
+  if (allRows.length === 0) {
+    const errMsg = errors.length
+      ? 'Error:\n' + errors.join('\n')
+      : 'Walang na-extract. Subukan mo ulit.';
+    showStatus('❌ ' + errMsg, 'err');
+    scrollToStatus();
+    return;
+  }
+
+  if (errors.length) {
+    showStatus(`⚠️ ${allRows.length} records extracted pero may error sa ${errors.length} page(s): ${errors.join(' | ')}`, 'warn');
+  } else {
+    showStatus(`✅ ${allRows.length} employees extracted mula sa ${imgFiles.length} photo(s). I-review tapos i-save.`, 'ok');
+  }
+
+  renderResults();
+  setStep(4);
+  scrollToStatus();
+  document.getElementById('float-save').style.display = '';
+}
+
+async function callGemini(apiKey, imgBase64, mimeType) {
+  const prompt = `You are an expert at reading Philippine retail store attendance sheets.
+Extract ALL employee records from this attendance photo.
+
+Return ONLY valid JSON — no markdown, no explanation, no extra text:
+{"rows":[{"branch":"branch name","name":"FULL NAME UPPERCASE","d1_15":13,"d16_31":14}]}
+
+Rules:
+- branch: copy exactly as shown in the sheet
+- name: UPPERCASE full name as written
+- d1_15: the number in the first attendance column (days 1-15). Use null if blank.
+- d16_31: the number in the second attendance column (days 16-31). Use null if blank.
+- Include every single person listed, do not skip anyone
+- Ignore empty/blank rows
+- Return ONLY the JSON object, nothing else`;
+
+  const body = {
+    contents: [{
+      parts: [
+        { inline_data: { mime_type: mimeType, data: imgBase64 } },
+        { text: prompt }
+      ]
+    }],
+    generationConfig: { temperature: 0, maxOutputTokens: 8192 }
+  };
+
+  const resp = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
+  );
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${resp.status}`);
+  }
+
+  const data = await resp.json();
+
+  // check for blocked/safety response
+  const candidate = data.candidates?.[0];
+  if (!candidate) throw new Error('No response from Gemini. Check your API key.');
+  if (candidate.finishReason === 'SAFETY') throw new Error('Blocked by safety filter.');
+
+  let raw = (candidate.content?.parts?.[0]?.text || '').trim();
+  if (!raw) throw new Error('Empty response from Gemini.');
+
+  // strip markdown fences if any
+  raw = raw.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/i,'');
+
+  // extract JSON object from response (in case there's surrounding text)
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in response: ' + raw.slice(0,120));
+
+  let parsed;
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch(e) {
+    throw new Error('JSON parse error: ' + e.message + ' | Raw: ' + raw.slice(0,120));
+  }
+
+  return parsed.rows || [];
+}
+
+async function callGroq(apiKey, imgBase64, mimeType) {
+  const prompt = `You are an expert at reading Philippine retail store attendance sheets.
+Extract ALL employee records from this attendance photo.
+
+Return ONLY valid JSON — no markdown, no explanation, no extra text:
+{"rows":[{"branch":"branch name","name":"FULL NAME UPPERCASE","d1_15":13,"d16_31":14}]}
+
+Rules:
+- branch: copy exactly as shown in the sheet
+- name: UPPERCASE full name as written
+- d1_15: number in first attendance column (days 1-15). Use null if blank.
+- d16_31: number in second attendance column (days 16-31). Use null if blank.
+- Include every single person, do not skip anyone
+- Ignore empty/blank rows
+- Return ONLY the JSON object, nothing else`;
+
+  const body = {
+    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imgBase64}` } },
+        { type: 'text', text: prompt }
+      ]
+    }],
+    temperature: 0,
+    max_tokens: 8192,
+    response_format: { type: 'json_object' }
+  };
+
+  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify(body)
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || `API error ${resp.status}`);
+  }
+
+  const data = await resp.json();
+  let raw = (data.choices?.[0]?.message?.content || '').trim();
+  if (!raw) throw new Error('Empty response from Groq.');
+
+  raw = raw.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/i,'');
+  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error('No JSON found in response: ' + raw.slice(0,120));
+
+  let parsed;
+  try { parsed = JSON.parse(jsonMatch[0]); }
+  catch(e) { throw new Error('JSON parse error: ' + e.message + ' | Raw: ' + raw.slice(0,120)); }
+
+  return parsed.rows || [];
+}
+
+// ── Render results table ───────────────────────────────────────────────────────
+function renderResults() {
+  document.getElementById('summary').innerHTML = `
+    <div class="sc"><div class="n">${imgFiles.length}</div><div class="l">Pages</div></div>
+    <div class="sc"><div class="n">${allRows.length}</div><div class="l">Records</div></div>
+  `;
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  allRows.forEach((r,i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${i+1}</td>
+      <td><span class="pg-chip">P${r._page}</span></td>
+      <td contenteditable="true" class="ec" data-i="${i}" data-f="branch">${esc(r.branch||'')}</td>
+      <td contenteditable="true" class="ec" data-i="${i}" data-f="name">${esc(r.name||'')}</td>
+      <td contenteditable="true" class="ec" data-i="${i}" data-f="d1_15">${r.d1_15??''}</td>
+      <td contenteditable="true" class="ec" data-i="${i}" data-f="d16_31">${r.d16_31??''}</td>
+      <td>
+        <select class="sel" onchange="allRows[${i}].status=this.value">
+          ${['Present','Absent','Late','Half Day','Day Off'].map(s=>`<option>${s}</option>`).join('')}
+        </select>
+      </td>
+      <td><span class="tag t-no" id="tag${i}">Pending</span></td>`;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('.ec').forEach(c => {
+    c.addEventListener('input', () => { allRows[+c.dataset.i][c.dataset.f] = c.textContent.trim(); });
+  });
+  document.getElementById('result-sec').style.display = '';
+  setTimeout(() => {
+    document.getElementById('result-sec').scrollIntoView({ behavior:'smooth', block:'start' });
+  }, 200);
+}
+
+// ── Step 4: Save ───────────────────────────────────────────────────────────────
+async function doSave() {
+  if (!xlFile || allRows.length === 0) return;
+  const btn = document.getElementById('btn-save');
+  btn.disabled=true; btn.innerHTML='<span class="spin"></span> Updating...';
+  showStatus('Loading masterlist and matching records...','info');
+
+  try {
+    // read masterlist
+    const xlBuf = await fileToArrayBuffer(xlFile);
+    const wb    = new ExcelJS.Workbook();
+    await wb.xlsx.load(xlBuf);
+    const ws = wb.worksheets[0];
+
+    // build employee index
+    const emps = [];
+    const cellStr = c => {
+      const v = c.value;
+      if (!v) return '';
+      if (typeof v === 'object' && v.richText) return v.richText.map(r=>r.text).join('').trim();
+      return v.toString().trim();
+    };
+    ws.eachRow((row, rn) => {
+      if (rn < 3) return;
+      const last   = cellStr(row.getCell(1));
+      const first  = cellStr(row.getCell(2));
+      const branch = cellStr(row.getCell(4));
+      if (last) emps.push({ rn, last, first, branch });
+    });
+
+    const unmatched = [];
+    let matchedCount = 0;
+
+    allRows.forEach((rec, i) => {
+      const hit = matchEmployee(rec, emps);
+      if (hit) {
+        const row = ws.getRow(hit.rn);
+        const v1  = rec.d1_15  !== '' && rec.d1_15  != null ? Number(rec.d1_15)  : NaN;
+        const v2  = rec.d16_31 !== '' && rec.d16_31 != null ? Number(rec.d16_31) : NaN;
+        if (!isNaN(v1) && isFinite(v1)) { row.getCell(5).value = v1; styleC(row.getCell(5)); }
+        if (!isNaN(v2) && isFinite(v2)) { row.getCell(6).value = v2; styleC(row.getCell(6)); }
+        row.commit();
+        rec._matched   = true;
+        rec._masterRow = hit.rn;
+        matchedCount++;
+        const tag = document.getElementById('tag'+i);
+        tag.className='tag t-ok'; tag.textContent='✓ Row '+hit.rn;
+      } else {
+        rec._matched = false;
+        unmatched.push({ name: rec.name, branch: rec.branch });
+        const tag = document.getElementById('tag'+i);
+        tag.className='tag t-no'; tag.textContent='Not found';
+      }
+    });
+
+    // download
+    const outBuf = await wb.xlsx.writeBuffer();
+    const now    = new Date();
+    const stamp  = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}`;
+    downloadBuf(outBuf, `Attendance_Masterlist_${stamp}.xlsx`);
+
+    let msg = `✓ ${matchedCount} records updated.`;
+    if (unmatched.length) msg += ` ⚠ ${unmatched.length} not found — see below.`;
+    showStatus(msg, unmatched.length ? 'warn' : 'ok');
+    setStep(4, true);
+    document.getElementById('float-save').style.display = 'none';
+
+    // update summary
+    document.getElementById('summary').innerHTML = `
+      <div class="sc"><div class="n">${imgFiles.length}</div><div class="l">Pages</div></div>
+      <div class="sc"><div class="n">${allRows.length}</div><div class="l">Records</div></div>
+      <div class="sc"><div class="n">${matchedCount}</div><div class="l">Updated ✓</div></div>
+      <div class="sc"><div class="n">${unmatched.length}</div><div class="l">Not Found</div></div>
+    `;
+
+    if (unmatched.length) {
+      document.getElementById('unmatch').innerHTML = `
+        <div class="unmatch">
+          <strong>⚠ ${unmatched.length} hindi nahanap sa masterlist</strong> — idagdag mo manually:
+          <ul>${unmatched.map(u=>`<li>${esc(u.name)} | ${esc(u.branch)}</li>`).join('')}</ul>
+        </div>`;
+    }
+  } catch(e) {
+    showStatus('Error: '+e.message,'err');
+    console.error(e);
+  } finally {
+    btn.disabled=false; btn.innerHTML='💾 Update Masterlist &amp; Download Excel';
+  }
+}
+
+// ── Name / branch matching ─────────────────────────────────────────────────────
+function norm(s) {
+  return (s||'').toLowerCase()
+    .replace(/[^a-z0-9 ]/g,'')
+    .replace(/\bjr?\b\.?/g,'')
+    .replace(/\s+/g,' ').trim();
+}
+function branchScore(a, b) {
+  const na=norm(a), nb=norm(b);
+  if (na===nb) return 1;
+  if (na.includes(nb)||nb.includes(na)) return .9;
+  const ta=new Set(na.split(' ')), tb=new Set(nb.split(' '));
+  const ix=[...ta].filter(t=>tb.has(t)).length;
+  return ix/Math.max(ta.size,tb.size);
+}
+function matchEmployee(rec, emps) {
+  const fn = norm(rec.name||'');
+  const fw = fn.split(' ').filter(Boolean);
+  if (!fw.length) return null;
+  let best=null, bestS=0;
+  for (const e of emps) {
+    const ln=norm(e.last);
+    if (!ln) continue;
+    if (!fw.includes(ln) && !fn.includes(ln)) continue;
+    const firstW = norm(e.first).split(' ').filter(Boolean);
+    const fmatch = firstW.some(w=>fn.includes(w)) ? 1 : 0;
+    const bs = branchScore(rec.branch||'', e.branch);
+    const sc = (1+fmatch)*(0.5+bs);
+    if (sc>bestS) { bestS=sc; best=e; }
+  }
+  return bestS>=0.8 ? best : null;
+}
+
+// ── Util ───────────────────────────────────────────────────────────────────────
+function styleC(cell) {
+  cell.fill={ type:'pattern',pattern:'solid',fgColor:{argb:'FFBBDEFB'} };
+  cell.font={ bold:true };
+  cell.alignment={ horizontal:'center',vertical:'middle' };
+}
+function fileToBase64(file) {
+  return new Promise((res,rej) => {
+    const r = new FileReader();
+    r.onload  = () => res(r.result.split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+function fileToArrayBuffer(file) {
+  return new Promise((res,rej) => {
+    const r = new FileReader();
+    r.onload  = () => res(r.result);
+    r.onerror = rej;
+    r.readAsArrayBuffer(file);
+  });
+}
+function downloadBuf(buf, name) {
+  const blob = new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = name; a.click();
+  URL.revokeObjectURL(a.href);
+}
+let _statusTimer = null;
+function showStatus(msg, type) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 's-' + type;
+  el.style.display = '';
+  // auto-hide info after 4s; keep ok/err/warn until next action
+  clearTimeout(_statusTimer);
+  if (type === 'info') _statusTimer = setTimeout(() => { el.style.display='none'; }, 4000);
+}
+function scrollToStatus() { /* toast is fixed — no scroll needed */ }
+function showProg(v) { document.getElementById('prog').style.display=v?'':'none'; }
+function setProg(p,t) {
+  document.getElementById('prog-fill').style.width=p+'%';
+  document.getElementById('prog-txt').textContent=t;
+}
+function setStep(n, done) {
+  for (let i=1;i<=4;i++) {
+    const s=document.getElementById('s'+i);
+    s.classList.remove('active','done');
+    if (i<n) s.classList.add('done');
+    else if (i===n) s.classList.add(done?'done':'active');
+  }
+}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function fmtSz(b){ return b>1048576?(b/1048576).toFixed(1)+' MB':(b/1024).toFixed(0)+' KB'; }
+function resetAll() {
+  xlFile=null; imgFiles=[]; allRows=[];
+  ['xl-box','img-box'].forEach(id => {
+    document.getElementById(id).classList.remove('filled','over');
+  });
+  document.getElementById('xl-box').querySelector('p').innerHTML=
+    `<strong>Click here</strong> or drag &amp; drop<br>your <strong>Masterlist.xlsx</strong>`;
+  document.getElementById('img-box').querySelector('p').innerHTML=
+    `<strong>Click here</strong> or drag &amp; drop<br>Pwede <strong>marami</strong> (Page 1, Page 2, etc.)`;
+  document.getElementById('btn-step2').disabled=true;
+  document.getElementById('btn-extract').disabled=true;
+  document.getElementById('step2').style.display='none';
+  document.getElementById('div12').style.display='none';
+  document.getElementById('result-sec').style.display='none';
+  document.getElementById('unmatch').innerHTML='';
+  document.getElementById('thumbs').innerHTML='';
+  document.getElementById('status').style.display='none';
+  document.getElementById('prog').style.display='none';
+  setStep(1);
+}
+</script>
+</body>
+</html>
