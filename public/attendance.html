@@ -204,16 +204,26 @@ hr.div{border:none;border-top:1px solid #eceff1;margin:20px 0;}
 
   <!-- Step 2: Photos -->
   <div id="step2" style="display:none">
-    <div class="sec">Step 2 — Upload Attendance Photos (multiple pages OK)</div>
+    <div class="sec">Step 2 — Upload Attendance Photos</div>
     <div class="uprow">
       <div class="upbox" id="img-box">
         <input type="file" id="img-inp" accept="image/jpeg,image/jpg,image/png" multiple/>
         <div class="ico">🖼️</div>
-        <p><strong>Click here</strong> or drag &amp; drop<br>
-          Pwede <strong>marami</strong> (Page 1, Page 2, etc.)</p>
+        <p id="img-box-txt"><strong>Click here</strong> o i-drag ang photo<br>
+          Pwede pumili ng <strong>marami nang sabay</strong></p>
       </div>
     </div>
+    <!-- Add more button — shown after first image added -->
+    <div id="add-more-wrap" style="display:none;margin-top:8px;">
+      <label style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+        background:#e8f0fe;border:2px dashed #1a3c6e;border-radius:8px;
+        padding:8px 16px;font-size:.85rem;font-weight:700;color:#1a3c6e;">
+        <input type="file" id="img-inp2" accept="image/jpeg,image/jpg,image/png" multiple style="display:none"/>
+        ➕ Dagdag pa (Page 2, Page 3…)
+      </label>
+    </div>
     <div class="thumbs" id="thumbs"></div>
+    <div id="page-count" style="font-size:.8rem;color:#1a3c6e;font-weight:700;margin-top:6px;display:none;"></div>
     <div class="acts">
       <button class="btn btn-blue" id="btn-extract" onclick="doExtract()" disabled>
         🤖 Extract Attendance Data
@@ -300,6 +310,7 @@ initDrop('xl-box',  f => handleXl(f[0]));
 initDrop('img-box', f => addImgs(Array.from(f)));
 document.getElementById('xl-inp').addEventListener('change', e => { if(e.target.files[0]) handleXl(e.target.files[0]); });
 document.getElementById('img-inp').addEventListener('change', e => { addImgs(Array.from(e.target.files)); e.target.value=''; });
+document.getElementById('img-inp2').addEventListener('change', e => { addImgs(Array.from(e.target.files)); e.target.value=''; });
 
 // ── Step 1: Masterlist ─────────────────────────────────────────────────────────
 function handleXl(file) {
@@ -339,13 +350,22 @@ function renderThumbs() {
       <div class="nm">${esc(f.name)}</div>`;
     w.appendChild(d);
   });
-  const box = document.getElementById('img-box');
+  const box      = document.getElementById('img-box');
+  const addMore  = document.getElementById('add-more-wrap');
+  const pgCount  = document.getElementById('page-count');
   if (imgFiles.length) {
     box.classList.add('filled');
-    box.querySelector('p').innerHTML = `<strong>${imgFiles.length} photo${imgFiles.length>1?'s':''} loaded</strong><br><span style="font-size:.75rem">Click/drop to add more</span>`;
+    document.getElementById('img-box-txt').innerHTML =
+      `<strong>✓ ${imgFiles.length} photo${imgFiles.length>1?'s':''} na-upload</strong><br><span style="font-size:.72rem;color:#2e7d32">Pwede dagdagan pa</span>`;
+    addMore.style.display = '';
+    pgCount.style.display = '';
+    pgCount.textContent   = `📄 ${imgFiles.length} page${imgFiles.length>1?'s':''} ang i-process ng AI`;
   } else {
     box.classList.remove('filled');
-    box.querySelector('p').innerHTML = `<strong>Click here</strong> or drag &amp; drop<br>Pwede <strong>marami</strong> (Page 1, Page 2, etc.)`;
+    document.getElementById('img-box-txt').innerHTML =
+      `<strong>Click here</strong> o i-drag ang photo<br>Pwede pumili ng <strong>marami nang sabay</strong>`;
+    addMore.style.display = 'none';
+    pgCount.style.display = 'none';
   }
 }
 
