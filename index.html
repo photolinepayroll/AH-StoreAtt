@@ -178,24 +178,11 @@ function switchProvider(){
   const inp=document.getElementById('api-key');
   const hint=document.getElementById('api-hint');
   document.getElementById('key-ok').style.display='none';
-  if(p==='groq'){
-    inp.placeholder='gsk_...';
-    inp.value=localStorage.getItem('ph_groq_key')||'';
-    hint.innerHTML='LIBRE — kuhanin sa <a href="https://console.groq.com/keys" target="_blank" style="color:#1a3c6e;font-weight:700;">console.groq.com/keys</a> &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito &nbsp;| 30 req/min, 1000/day';
-  }else{
-    inp.placeholder='AIza...';
-    inp.value=localStorage.getItem('ph_gemini_key')||'';
-    hint.innerHTML='LIBRE — kuhanin sa <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#1a3c6e;font-weight:700;">aistudio.google.com/apikey</a> &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito';
-  }
+  if(p==='groq'){inp.placeholder='gsk_...';inp.value=localStorage.getItem('ph_groq_key')||'';hint.innerHTML='LIBRE — kuhanin sa <a href="https://console.groq.com/keys" target="_blank" style="color:#1a3c6e;font-weight:700;">console.groq.com/keys</a> &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito &nbsp;| 30 req/min, 1000/day';}
+  else{inp.placeholder='AIza...';inp.value=localStorage.getItem('ph_gemini_key')||'';hint.innerHTML='LIBRE — kuhanin sa <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#1a3c6e;font-weight:700;">aistudio.google.com/apikey</a> &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito';}
   if(inp.value)document.getElementById('key-ok').style.display='';
 }
-function saveKey(){
-  const k=document.getElementById('api-key').value.trim();
-  if(!k)return;
-  const p=document.getElementById('api-provider').value;
-  localStorage.setItem(p==='groq'?'ph_groq_key':'ph_gemini_key',k);
-  document.getElementById('key-ok').style.display='';
-}
+function saveKey(){const k=document.getElementById('api-key').value.trim();if(!k)return;const p=document.getElementById('api-provider').value;localStorage.setItem(p==='groq'?'ph_groq_key':'ph_gemini_key',k);document.getElementById('key-ok').style.display='';}
 function initDrop(id,cb){const el=document.getElementById(id);el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('over');});el.addEventListener('dragleave',()=>el.classList.remove('over'));el.addEventListener('drop',e=>{e.preventDefault();el.classList.remove('over');cb(e.dataTransfer.files);});}
 initDrop('xl-box',f=>handleXl(f[0]));
 initDrop('img-box',f=>addImgs(Array.from(f)));
@@ -208,6 +195,19 @@ function clearImgs(){imgFiles=[];renderThumbs();document.getElementById('btn-ext
 function removeImg(i){imgFiles.splice(i,1);renderThumbs();document.getElementById('btn-extract').disabled=imgFiles.length===0;}
 function renderThumbs(){const w=document.getElementById('thumbs');w.innerHTML='';imgFiles.forEach((f,i)=>{const url=URL.createObjectURL(f);const d=document.createElement('div');d.className='thumb';d.innerHTML=`<img src="${url}"><span class="pg">P${i+1}</span><button class="rm" onclick="removeImg(${i})">✕</button><div class="nm">${esc(f.name)}</div>`;w.appendChild(d);});const box=document.getElementById('img-box');if(imgFiles.length){box.classList.add('filled');box.querySelector('p').innerHTML=`<strong>${imgFiles.length} photo${imgFiles.length>1?'s':''} loaded</strong><br><span style="font-size:.75rem">Click/drop to add more</span>`;}else{box.classList.remove('filled');box.querySelector('p').innerHTML=`<strong>Click here</strong> or drag &amp; drop<br>Pwede <strong>marami</strong> (Page 1, Page 2, etc.)`;}
 }
+const PROMPT=`You are an expert at reading Philippine retail store attendance sheets.
+Extract ALL employee records from this attendance photo.
+
+Return ONLY valid JSON — no markdown, no explanation:
+{"rows":[{"branch":"branch name","name":"FULL NAME UPPERCASE","d1_15":13,"d16_31":14}]}
+
+Rules:
+- branch: copy exactly as shown
+- name: UPPERCASE as written
+- d1_15: first attendance column (days 1-15), null if blank
+- d16_31: second attendance column (days 16-31), null if blank
+- Include every person, skip empty rows
+- Return ONLY the JSON object`;
 async function doExtract(){
   const key=document.getElementById('api-key').value.trim();
   if(!key){showStatus('I-enter muna ang iyong API key sa taas.','err');return;}
@@ -229,7 +229,7 @@ async function doExtract(){
     }catch(e){
       console.error('Page '+(i+1)+' error:',e);
       if(e.message.includes('429')||e.message.toLowerCase().includes('quota')||e.message.includes('rate_limit')){
-        showStatus(`⏳ Rate limit hit — waiting 65s then retrying page ${i+1}...`,'warn');
+        showStatus(`⏳ Rate limit — waiting 65s then retrying page ${i+1}...`,'warn');
         await new Promise(r=>setTimeout(r,65000));
         try{
           const b64=await fileToBase64(imgFiles[i]);
@@ -243,47 +243,33 @@ async function doExtract(){
   setProg(100,'Done!');setTimeout(()=>showProg(false),800);
   btn.disabled=false;btn.innerHTML='🤖 Re-Extract';
   if(allRows.length===0){showStatus('❌ '+(errors.length?'Error: '+errors.join(' | '):'Walang na-extract. Subukan mo ulit.'),'err');return;}
-  if(errors.length){showStatus(`⚠️ ${allRows.length} records extracted pero may error sa ${errors.length} page(s): ${errors.join(' | ')}`,'warn');}
-  else{showStatus(`✅ ${allRows.length} employees extracted mula sa ${imgFiles.length} photo(s). I-review tapos i-save.`,'ok');}
+  if(errors.length)showStatus(`⚠️ ${allRows.length} records extracted pero may error sa ${errors.length} page(s): ${errors.join(' | ')}`,'warn');
+  else showStatus(`✅ ${allRows.length} employees extracted mula sa ${imgFiles.length} photo(s). I-review tapos i-save.`,'ok');
   renderResults();setStep(4);
 }
-const PROMPT=`You are an expert at reading Philippine retail store attendance sheets.
-Extract ALL employee records from this attendance photo.
-
-Return ONLY valid JSON — no markdown, no explanation, no extra text:
-{"rows":[{"branch":"branch name","name":"FULL NAME UPPERCASE","d1_15":13,"d16_31":14}]}
-
-Rules:
-- branch: copy exactly as shown in the sheet
-- name: UPPERCASE full name as written
-- d1_15: number in first attendance column (days 1-15). Use null if blank.
-- d16_31: number in second attendance column (days 16-31). Use null if blank.
-- Include every single person, do not skip anyone
-- Ignore empty/blank rows
-- Return ONLY the JSON object, nothing else`;
-function parseAIResponse(raw){
+function parseResp(raw){
   if(!raw)throw new Error('Empty response from AI.');
   raw=raw.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/i,'');
   const m=raw.match(/\{[\s\S]*\}/);
-  if(!m)throw new Error('No JSON found: '+raw.slice(0,120));
-  try{return JSON.parse(m[0]).rows||[];}catch(e){throw new Error('JSON parse error: '+e.message);}
+  if(!m)throw new Error('No JSON in response: '+raw.slice(0,100));
+  try{return JSON.parse(m[0]).rows||[];}catch(e){throw new Error('JSON parse error: '+e.message+' | '+raw.slice(0,80));}
 }
 async function callGroq(apiKey,imgBase64,mimeType){
-  const body={model:'meta-llama/llama-4-scout-17b-16e-instruct',messages:[{role:'user',content:[{type:'image_url',image_url:{url:`data:${mimeType};base64,${imgBase64}`}},{type:'text',text:PROMPT}]}],temperature:0,max_tokens:8192};
+  const body={model:'meta-llama/llama-4-scout-17b-16e-instruct',messages:[{role:'user',content:[{type:'image_url',image_url:{url:`data:${mimeType};base64,${imgBase64}`}},{type:'text',text:PROMPT}]}],temperature:0,max_tokens:8192,response_format:{type:'json_object'}};
   const resp=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json','authorization':`Bearer ${apiKey}`},body:JSON.stringify(body)});
-  if(!resp.ok){const err=await resp.json().catch(()=>({}));throw new Error(err.error?.message||`API error ${resp.status}`);}
+  if(!resp.ok){const e=await resp.json().catch(()=>({}));throw new Error(e.error?.message||`Groq API error ${resp.status}`);}
   const data=await resp.json();
-  return parseAIResponse(data.choices?.[0]?.message?.content||'');
+  return parseResp(data.choices?.[0]?.message?.content||'');
 }
 async function callGemini(apiKey,imgBase64,mimeType){
   const body={contents:[{parts:[{inline_data:{mime_type:mimeType,data:imgBase64}},{text:PROMPT}]}],generationConfig:{temperature:0,maxOutputTokens:8192}};
   const resp=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-  if(!resp.ok){const err=await resp.json().catch(()=>({}));throw new Error(err.error?.message||`API error ${resp.status}`);}
+  if(!resp.ok){const e=await resp.json().catch(()=>({}));throw new Error(e.error?.message||`Gemini API error ${resp.status}`);}
   const data=await resp.json();
   const c=data.candidates?.[0];
-  if(!c)throw new Error('No response from Gemini. Check your API key.');
+  if(!c)throw new Error('No response from Gemini.');
   if(c.finishReason==='SAFETY')throw new Error('Blocked by safety filter.');
-  return parseAIResponse(c.content?.parts?.[0]?.text||'');
+  return parseResp(c.content?.parts?.[0]?.text||'');
 }
 function renderResults(){
   document.getElementById('summary').innerHTML=`<div class="sc"><div class="n">${imgFiles.length}</div><div class="l">Pages</div></div><div class="sc"><div class="n">${allRows.length}</div><div class="l">Records</div></div>`;
@@ -346,8 +332,8 @@ function styleC(cell){cell.fill={type:'pattern',pattern:'solid',fgColor:{argb:'F
 function fileToBase64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.onerror=rej;r.readAsDataURL(file);});}
 function fileToArrayBuffer(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsArrayBuffer(file);});}
 function downloadBuf(buf,name){const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
-let _statusTimer=null;
-function showStatus(msg,type){const el=document.getElementById('status');el.textContent=msg;el.className='s-'+type;el.style.display='';clearTimeout(_statusTimer);if(type==='info')_statusTimer=setTimeout(()=>{el.style.display='none';},4000);}
+let _st=null;
+function showStatus(msg,type){const el=document.getElementById('status');el.textContent=msg;el.className='s-'+type;el.style.display='';clearTimeout(_st);if(type==='info')_st=setTimeout(()=>{el.style.display='none';},4000);}
 function showProg(v){document.getElementById('prog').style.display=v?'':'none';}
 function setProg(p,t){document.getElementById('prog-fill').style.width=p+'%';document.getElementById('prog-txt').textContent=t;}
 function setStep(n,done){for(let i=1;i<=4;i++){const s=document.getElementById('s'+i);s.classList.remove('active','done');if(i<n)s.classList.add('done');else if(i===n)s.classList.add(done?'done':'active');}}
