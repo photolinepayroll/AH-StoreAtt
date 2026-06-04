@@ -411,9 +411,11 @@ async function doExtract() {
     if (i > 0) await new Promise(r => setTimeout(r, GAP_MS));
 
     const tryExtract = async () => {
-      setProg(pct, `Page ${i+1} / ${imgFiles.length} — sending to AI...`);
+      setProg(pct, `Page ${i+1} / ${imgFiles.length} — enhancing image...`);
       const { b64, mime, sizekb } = await compressImage(imgFiles[i]);
       console.log(`Page ${i+1}: ${sizekb}KB after compression`);
+      setProg(pct, `Page ${i+1} / ${imgFiles.length} — scanning...`);
+      showStatus(`🔍 Page ${i+1} of ${imgFiles.length} — scanning (may deep-scan kung kaunti ang nakita)...`, 'info');
       const rows = await callGroq(key, b64, mime);
       reqThisMinute++;
       return rows;
@@ -468,29 +470,49 @@ async function doExtract() {
   document.getElementById('float-save').style.display = '';
 }
 
-async function callGroq(apiKey, imgBase64, mimeType) {
-  const prompt = `You are an expert at reading Philippine retail store attendance sheets.
-Extract ALL employee records from this attendance photo.
+function buildPrompt(deep=false) {
+  const base = `You are an expert OCR system specialized in Philippine retail store attendance sheets.
+Your job: extract EVERY employee row from this image — do NOT skip anyone.
 
-Return ONLY valid JSON — no markdown, no explanation, no extra text:
-{"rows":[{"branch":"branch name","name":"FULL NAME UPPERCASE","d1_15":13,"d16_31":14}]}
+The sheet typically looks like:
+- Header row with branch/store name at the top
+- Rows of employees, each with: full name | attendance days 1-15 | attendance days 16-31
+- Numbers in the attendance columns may be handwritten or printed
+- Names are in UPPERCASE (Last Name, First Name or First Last format)
+- Some cells may be blurry, tilted, or partially cut off — do your best to read them
 
-Rules:
-- branch: copy exactly as shown in the sheet
-- name: UPPERCASE full name as written
-- d1_15: number in first attendance column (days 1-15). Use null if blank.
-- d16_31: number in second attendance column (days 16-31). Use null if blank.
-- Include every single person, do not skip anyone
-- Ignore empty/blank rows
-- Return ONLY the JSON object, nothing else`;
+Return ONLY this JSON (no markdown, no explanation):
+{"rows":[{"branch":"BRANCH NAME","name":"FULL NAME UPPERCASE","d1_15":13,"d16_31":14}]}
 
+Field rules:
+- branch: the store/branch name from the header (same for all rows on this page)
+- name: full name EXACTLY as written, UPPERCASE
+- d1_15: integer days present for 1st half of month; null if blank or unreadable
+- d16_31: integer days present for 2nd half of month; null if blank or unreadable
+- INCLUDE every row with a name — even if attendance columns are empty/null
+- Do NOT include column headers or blank rows`;
+
+  if (!deep) return base;
+
+  return base + `
+
+DEEP SCAN MODE — this image was hard to read on first pass:
+- Scan the ENTIRE image top to bottom, row by row
+- Include rows even if the name is partially visible or cut off at the edge
+- If a number is ambiguous (e.g. 1 vs 7, 0 vs 8), make your best guess
+- Look for names in the LEFT-most text column — they may be indented or aligned differently
+- Do not stop early — extract until the last row of the sheet
+- If the sheet has multiple sections or departments, include ALL of them`;
+}
+
+async function callGroqRaw(apiKey, imgBase64, mimeType, deep=false) {
   const body = {
-    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    model: 'meta-llama/llama-4-maverick-17b-128e-instruct',
     messages: [{
       role: 'user',
       content: [
-        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imgBase64}` } },
-        { type: 'text', text: prompt }
+        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imgBase64}`, detail: 'high' } },
+        { type: 'text', text: buildPrompt(deep) }
       ]
     }],
     temperature: 0,
@@ -512,16 +534,28 @@ Rules:
   const data = await resp.json();
   let raw = (data.choices?.[0]?.message?.content || '').trim();
   if (!raw) throw new Error('Empty response from Groq.');
-
   raw = raw.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/i,'');
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in response: ' + raw.slice(0,120));
-
   let parsed;
   try { parsed = JSON.parse(jsonMatch[0]); }
   catch(e) { throw new Error('JSON parse error: ' + e.message + ' | Raw: ' + raw.slice(0,120)); }
-
   return parsed.rows || [];
+}
+
+async function callGroq(apiKey, imgBase64, mimeType) {
+  // First pass — normal
+  const rows = await callGroqRaw(apiKey, imgBase64, mimeType, false);
+
+  // If suspiciously few rows (≤2), do a deep-scan retry with enhanced prompt
+  if (rows.length <= 2) {
+    console.warn(`Only ${rows.length} rows on first pass — retrying with deep scan...`);
+    const deepRows = await callGroqRaw(apiKey, imgBase64, mimeType, true);
+    // Return whichever pass got more rows
+    return deepRows.length > rows.length ? deepRows : rows;
+  }
+
+  return rows;
 }
 
 // ── Render results table ───────────────────────────────────────────────────────
@@ -756,8 +790,9 @@ function styleC(cell) {
   cell.alignment={ horizontal:'center',vertical:'middle' };
 }
 
-// Compress + resize image before sending to AI (keeps quality, reduces tokens)
-function compressImage(file, maxPx=1600, quality=0.82) {
+// Compress + enhance image before sending to AI
+// enhance=true: boost contrast & sharpen for hard-to-read sheets
+function compressImage(file, maxPx=1800, quality=0.88, enhance=true) {
   return new Promise((res, rej) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -770,12 +805,41 @@ function compressImage(file, maxPx=1600, quality=0.82) {
       }
       const c = document.createElement('canvas');
       c.width=w; c.height=h;
-      c.getContext('2d').drawImage(img,0,0,w,h);
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+
+      if (enhance) {
+        // Boost contrast + slight sharpening for attendance sheets
+        const id = ctx.getImageData(0, 0, w, h);
+        const d  = id.data;
+        const contrast = 1.35, intercept = 128*(1-contrast);
+        for (let i=0; i<d.length; i+=4) {
+          // contrast
+          d[i]   = Math.min(255,Math.max(0, d[i]  *contrast+intercept));
+          d[i+1] = Math.min(255,Math.max(0, d[i+1]*contrast+intercept));
+          d[i+2] = Math.min(255,Math.max(0, d[i+2]*contrast+intercept));
+        }
+        ctx.putImageData(id, 0, 0);
+        // Sharpen via unsharp-mask approximation (blur then subtract)
+        ctx.filter = 'blur(0.5px)';
+        const tmp = document.createElement('canvas');
+        tmp.width=w; tmp.height=h;
+        const tctx = tmp.getContext('2d');
+        tctx.drawImage(c, 0, 0);
+        ctx.filter = 'none';
+        // overlay with hard light to sharpen edges
+        ctx.globalCompositeOperation = 'hard-light';
+        ctx.globalAlpha = 0.12;
+        ctx.drawImage(tmp, 0, 0);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+      }
+
       c.toBlob(blob => {
         if (!blob) { rej(new Error('Canvas compression failed')); return; }
         const reader = new FileReader();
         reader.onload = () => res({
-          b64:  reader.result.split(',')[1],
+          b64: reader.result.split(',')[1],
           mime: 'image/jpeg',
           sizekb: Math.round(blob.size/1024)
         });
