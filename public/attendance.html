@@ -373,11 +373,15 @@ function renderThumbs() {
   }
 }
 
-// ── Step 3: Extract via Google Gemini API (FREE) ──────────────────────────────
+// ── Step 3: Extract via AI API ────────────────────────────────────────────────
 async function doExtract() {
   const key = document.getElementById('api-key').value.trim();
+  const provider = document.getElementById('api-provider').value;
   if (!key) {
-    showStatus('I-enter muna ang iyong Google Gemini API key sa taas.','err');
+    const hint = provider === 'groq'
+      ? 'I-enter muna ang iyong Groq API key sa taas. Kuhanin sa console.groq.com/keys (LIBRE).'
+      : 'I-enter muna ang iyong Gemini API key sa taas. Kung nag-expire na, lumipat sa Groq (LIBRE).';
+    showStatus(hint, 'err');
     scrollToStatus(); return;
   }
   if (imgFiles.length === 0) return;
@@ -388,38 +392,58 @@ async function doExtract() {
   showProg(true); setStep(3);
   scrollToStatus();
 
+  let activeProvider = provider;
+  let geminiQuotaDead = false;
+
   const errors = [];
   for (let i = 0; i < imgFiles.length; i++) {
     setProg(Math.round(((i+0.5)/imgFiles.length)*90), `Analyzing page ${i+1} of ${imgFiles.length}...`);
     showStatus(`🔍 Analyzing page ${i+1} of ${imgFiles.length}... please wait.`, 'info');
 
-    // wait between pages to avoid Gemini free-tier rate limit (15 req/min)
-    if (i > 0) {
-      showStatus(`⏳ Waiting 5s before page ${i+1} (free tier limit)...`, 'info');
-      await new Promise(r => setTimeout(r, 5000));
-    }
+    // small gap between pages for free-tier rate limits
+    if (i > 0) await new Promise(r => setTimeout(r, 1500));
 
     try {
-      const b64      = await fileToBase64(imgFiles[i]);
-      const mime     = imgFiles[i].type;
-      const provider = document.getElementById('api-provider').value;
-      const rows     = provider === 'groq'
+      const b64  = await fileToBase64(imgFiles[i]);
+      const mime = imgFiles[i].type;
+      const rows = activeProvider === 'groq'
         ? await callGroq(key, b64, mime)
         : await callGemini(key, b64, mime);
       rows.forEach(r => { r._page = i+1; });
       allRows = allRows.concat(rows);
     } catch(e) {
       console.error('Page '+(i+1)+' error:', e);
-      // if rate limited, wait longer and retry once
-      if (e.message.includes('429') || e.message.toLowerCase().includes('quota') || e.message.includes('rate_limit')) {
+      const isQuota = e.message.includes('429') || e.message.toLowerCase().includes('quota') || e.message.includes('rate_limit') || e.message.includes('limit: 0');
+
+      // Gemini quota permanently exhausted (limit: 0) — auto-switch to Groq
+      if (isQuota && activeProvider === 'gemini' && e.message.includes('limit: 0')) {
+        geminiQuotaDead = true;
+        const groqKey = localStorage.getItem('ph_groq_key') || '';
+        if (groqKey) {
+          showStatus(`⚠️ Gemini quota exhausted — auto-switching to Groq for remaining pages...`, 'warn');
+          activeProvider = 'groq';
+          // retry this page with Groq
+          try {
+            const b64  = await fileToBase64(imgFiles[i]);
+            const mime = imgFiles[i].type;
+            const rows = await callGroq(groqKey, b64, mime);
+            rows.forEach(r => { r._page = i+1; });
+            allRows = allRows.concat(rows);
+          } catch(e2) {
+            errors.push(`Page ${i+1}: ${e2.message}`);
+          }
+        } else {
+          showStatus('❌ Gemini quota exhausted (limit: 0) at walang Groq key. I-save ang Groq API key sa taas para gamitin bilang backup. Kuhanin sa console.groq.com/keys (LIBRE).', 'err');
+          errors.push(`Page ${i+1}: Gemini quota exhausted — add a Groq key as fallback`);
+        }
+      } else if (isQuota && activeProvider === 'groq') {
+        // Groq rate limit — wait and retry
         showStatus(`⏳ Rate limit hit — waiting 65s then retrying page ${i+1}...`, 'warn');
         await new Promise(r => setTimeout(r, 65000));
         try {
-          const b64      = await fileToBase64(imgFiles[i]);
-          const provider = document.getElementById('api-provider').value;
-          const rows     = provider === 'groq'
-            ? await callGroq(key, b64, mime)
-            : await callGemini(key, b64, mime);
+          const b64  = await fileToBase64(imgFiles[i]);
+          const mime = imgFiles[i].type;
+          const rows = await callGroq(key, b64, mime);
           rows.forEach(r => { r._page = i+1; });
           allRows = allRows.concat(rows);
         } catch(e2) {
@@ -429,6 +453,12 @@ async function doExtract() {
         errors.push(`Page ${i+1}: ${e.message}`);
       }
     }
+  }
+
+  // notify user if we had to switch providers mid-run
+  if (geminiQuotaDead && activeProvider === 'groq') {
+    document.getElementById('api-provider').value = 'groq';
+    switchProvider();
   }
 
   setProg(100,'Done!');
