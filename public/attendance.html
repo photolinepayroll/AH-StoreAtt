@@ -155,14 +155,14 @@ hr.div{border:none;border-top:1px solid #eceff1;margin:20px 0;}
 
   <!-- API Key bar -->
   <div class="apibar">
-    <label>🔑 Anthropic API Key:</label>
-    <input type="password" id="api-key" placeholder="sk-ant-api03-..." autocomplete="off"/>
+    <label>🔑 Google Gemini API Key:</label>
+    <input type="password" id="api-key" placeholder="AIza..." autocomplete="off"/>
     <button class="save-key" onclick="saveKey()">Save Key</button>
     <span class="key-ok" id="key-ok" style="display:none">✓ Key saved</span>
     <span style="font-size:.75rem;color:#607d8b;flex-basis:100%;">
-      Get your free key at
-      <a href="https://console.anthropic.com" target="_blank" style="color:#1a3c6e;">console.anthropic.com</a>
-      &nbsp;→ API Keys
+      LIBRE — kuhanin sa
+      <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#1a3c6e;font-weight:700;">aistudio.google.com/apikey</a>
+      &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito
     </span>
   </div>
 
@@ -263,7 +263,7 @@ document.getElementById('month-lbl').textContent =
   new Date().toLocaleString('en-PH',{month:'long',year:'numeric'}).toUpperCase();
 
 // Load saved API key
-const saved = localStorage.getItem('ph_api_key');
+const saved = localStorage.getItem('ph_gemini_key');
 if (saved) {
   document.getElementById('api-key').value = saved;
   document.getElementById('key-ok').style.display = '';
@@ -272,7 +272,7 @@ if (saved) {
 function saveKey() {
   const k = document.getElementById('api-key').value.trim();
   if (!k) return;
-  localStorage.setItem('ph_api_key', k);
+  localStorage.setItem('ph_gemini_key', k);
   document.getElementById('key-ok').style.display = '';
 }
 
@@ -336,10 +336,10 @@ function renderThumbs() {
   }
 }
 
-// ── Step 3: Extract via Anthropic API directly ─────────────────────────────────
+// ── Step 3: Extract via Google Gemini API (FREE) ──────────────────────────────
 async function doExtract() {
   const key = document.getElementById('api-key').value.trim();
-  if (!key) { showStatus('Please enter your Anthropic API key first.','err'); return; }
+  if (!key) { showStatus('I-enter muna ang iyong Google Gemini API key sa taas.','err'); return; }
   if (imgFiles.length === 0) return;
 
   const btn = document.getElementById('btn-extract');
@@ -352,9 +352,9 @@ async function doExtract() {
     setProg(Math.round((i/imgFiles.length)*90), `Analyzing page ${i+1} of ${imgFiles.length}...`);
     showStatus(`Sending page ${i+1} to AI...`, 'info');
     try {
-      const b64      = await fileToBase64(imgFiles[i]);
-      const mime     = imgFiles[i].type;
-      const rows     = await callClaude(key, b64, mime);
+      const b64  = await fileToBase64(imgFiles[i]);
+      const mime = imgFiles[i].type;
+      const rows = await callGemini(key, b64, mime);
       rows.forEach(r => { r._page = i+1; });
       allRows = allRows.concat(rows);
       done++;
@@ -378,7 +378,7 @@ async function doExtract() {
   btn.disabled=false; btn.innerHTML='🤖 Re-Extract';
 }
 
-async function callClaude(apiKey, imgBase64, mimeType) {
+async function callGemini(apiKey, imgBase64, mimeType) {
   const prompt = `You are an expert at reading Philippine retail store attendance sheets.
 Extract ALL employee records from this attendance photo.
 
@@ -403,35 +403,28 @@ Rules:
 - Return pure JSON only`;
 
   const body = {
-    model: 'claude-opus-4-8',
-    max_tokens: 4096,
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'image', source: { type: 'base64', media_type: mimeType, data: imgBase64 } },
-        { type: 'text', text: prompt }
+    contents: [{
+      parts: [
+        { inline_data: { mime_type: mimeType, data: imgBase64 } },
+        { text: prompt }
       ]
-    }]
+    }],
+    generationConfig: { temperature: 0, maxOutputTokens: 4096 }
   };
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify(body)
-  });
+  const resp = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
+  );
 
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error(err.error?.message || `API error ${resp.status}`);
+    const msg = err.error?.message || `API error ${resp.status}`;
+    throw new Error(msg);
   }
 
-  const data  = await resp.json();
-  const raw   = data.content[0].text.trim()
+  const data = await resp.json();
+  const raw  = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim()
     .replace(/^```(?:json)?\s*/i,'').replace(/\s*```$/i,'');
   const parsed = JSON.parse(raw);
   return parsed.rows || [];
