@@ -92,12 +92,20 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:#eef2f7;min-height:100vh
 .btn-ghost:hover:not(:disabled){background:#eef3ff;}
 .acts{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px;}
 
-/* status */
-#status{display:none;margin:12px 0;padding:12px 15px;border-radius:8px;font-size:.87rem;}
-.s-info{background:#e3f2fd;color:#1565c0;border:1px solid #90caf9;}
-.s-ok{background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;}
-.s-err{background:#ffebee;color:#c62828;border:1px solid #ef9a9a;}
-.s-warn{background:#fff8e1;color:#e65100;border:1px solid #ffcc80;}
+/* status — fixed toast at top */
+#status{
+  display:none;
+  position:fixed;top:12px;left:50%;transform:translateX(-50%);
+  z-index:9999;min-width:320px;max-width:90vw;
+  padding:14px 20px;border-radius:10px;font-size:.92rem;font-weight:600;
+  box-shadow:0 4px 20px rgba(0,0,0,.25);text-align:center;
+  animation:slideDown .3s ease;
+}
+@keyframes slideDown{from{top:-60px;opacity:0}to{top:12px;opacity:1}}
+.s-info{background:#1565c0;color:#fff;}
+.s-ok{background:#2e7d32;color:#fff;}
+.s-err{background:#c62828;color:#fff;}
+.s-warn{background:#e65100;color:#fff;}
 
 /* progress */
 .prog{display:none;margin:12px 0;}
@@ -214,7 +222,7 @@ hr.div{border:none;border-top:1px solid #eceff1;margin:20px 0;}
   </div>
 
   <!-- Status & Progress -->
-  <div id="status"></div>
+  <div id="status" onclick="this.style.display='none'" title="Click to close" style="cursor:pointer"></div>
   <div class="prog" id="prog">
     <div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
     <div class="prog-txt" id="prog-txt"></div>
@@ -633,15 +641,17 @@ function downloadBuf(buf, name) {
   a.download = name; a.click();
   URL.revokeObjectURL(a.href);
 }
+let _statusTimer = null;
 function showStatus(msg, type) {
-  const el=document.getElementById('status');
-  el.textContent=msg; el.className='s-'+type; el.style.display='';
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 's-' + type;
+  el.style.display = '';
+  // auto-hide info after 4s; keep ok/err/warn until next action
+  clearTimeout(_statusTimer);
+  if (type === 'info') _statusTimer = setTimeout(() => { el.style.display='none'; }, 4000);
 }
-function scrollToStatus() {
-  setTimeout(() => {
-    document.getElementById('status').scrollIntoView({ behavior:'smooth', block:'center' });
-  }, 100);
-}
+function scrollToStatus() { /* toast is fixed — no scroll needed */ }
 function showProg(v) { document.getElementById('prog').style.display=v?'':'none'; }
 function setProg(p,t) {
   document.getElementById('prog-fill').style.width=p+'%';
