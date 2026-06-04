@@ -363,6 +363,13 @@ async function doExtract() {
   for (let i = 0; i < imgFiles.length; i++) {
     setProg(Math.round(((i+0.5)/imgFiles.length)*90), `Analyzing page ${i+1} of ${imgFiles.length}...`);
     showStatus(`🔍 Analyzing page ${i+1} of ${imgFiles.length}... please wait.`, 'info');
+
+    // wait between pages to avoid Gemini free-tier rate limit (15 req/min)
+    if (i > 0) {
+      showStatus(`⏳ Waiting 5s before page ${i+1} (free tier limit)...`, 'info');
+      await new Promise(r => setTimeout(r, 5000));
+    }
+
     try {
       const b64  = await fileToBase64(imgFiles[i]);
       const mime = imgFiles[i].type;
@@ -371,7 +378,21 @@ async function doExtract() {
       allRows = allRows.concat(rows);
     } catch(e) {
       console.error('Page '+(i+1)+' error:', e);
-      errors.push(`Page ${i+1}: ${e.message}`);
+      // if rate limited, wait longer and retry once
+      if (e.message.includes('429') || e.message.toLowerCase().includes('quota')) {
+        showStatus(`⏳ Rate limit hit — waiting 65s then retrying page ${i+1}...`, 'warn');
+        await new Promise(r => setTimeout(r, 65000));
+        try {
+          const b64  = await fileToBase64(imgFiles[i]);
+          const rows = await callGemini(key, b64, imgFiles[i].type);
+          rows.forEach(r => { r._page = i+1; });
+          allRows = allRows.concat(rows);
+        } catch(e2) {
+          errors.push(`Page ${i+1}: ${e2.message}`);
+        }
+      } else {
+        errors.push(`Page ${i+1}: ${e.message}`);
+      }
     }
   }
 
