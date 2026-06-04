@@ -385,29 +385,53 @@ async function doExtract() {
   showProg(true); setStep(3);
   scrollToStatus();
 
+  // Groq free tier: 30 req/min → safe gap = 2.5s between requests
+  // For large batches (>10) add a bit more breathing room
+  const GAP_MS = imgFiles.length > 10 ? 3000 : 2500;
+  let reqThisMinute = 0, minuteStart = Date.now();
+
   const errors = [];
   for (let i = 0; i < imgFiles.length; i++) {
-    setProg(Math.round(((i+0.5)/imgFiles.length)*90), `Analyzing page ${i+1} of ${imgFiles.length}...`);
-    showStatus(`🔍 Analyzing page ${i+1} of ${imgFiles.length}... please wait.`, 'info');
+    const pct = Math.round(((i+0.5)/imgFiles.length)*90);
+    setProg(pct, `Page ${i+1} / ${imgFiles.length} — compressing...`);
+    showStatus(`🔍 Page ${i+1} of ${imgFiles.length} — analyzing...`, 'info');
 
-    if (i > 0) await new Promise(r => setTimeout(r, 1500));
+    // Rate-limit guard: if 28 requests in current minute, wait for next minute
+    if (reqThisMinute >= 28) {
+      const elapsed = Date.now() - minuteStart;
+      const wait = Math.max(0, 61000 - elapsed);
+      if (wait > 0) {
+        showStatus(`⏳ 28 requests sent — naghihintay ng ${Math.ceil(wait/1000)}s para sa rate limit...`, 'warn');
+        await new Promise(r => setTimeout(r, wait));
+      }
+      reqThisMinute = 0; minuteStart = Date.now();
+    }
+
+    // Small gap between consecutive requests
+    if (i > 0) await new Promise(r => setTimeout(r, GAP_MS));
+
+    const tryExtract = async () => {
+      setProg(pct, `Page ${i+1} / ${imgFiles.length} — sending to AI...`);
+      const { b64, mime, sizekb } = await compressImage(imgFiles[i]);
+      console.log(`Page ${i+1}: ${sizekb}KB after compression`);
+      const rows = await callGroq(key, b64, mime);
+      reqThisMinute++;
+      return rows;
+    };
 
     try {
-      const b64  = await fileToBase64(imgFiles[i]);
-      const mime = imgFiles[i].type;
-      const rows = await callGroq(key, b64, mime);
+      const rows = await tryExtract();
       rows.forEach(r => { r._page = i+1; });
       allRows = allRows.concat(rows);
     } catch(e) {
       console.error('Page '+(i+1)+' error:', e);
       const isQuota = e.message.includes('429') || e.message.toLowerCase().includes('quota') || e.message.includes('rate_limit');
       if (isQuota) {
-        showStatus(`⏳ Rate limit hit — naghihintay ng 65s bago i-retry ang page ${i+1}...`, 'warn');
+        showStatus(`⏳ Rate limit — naghihintay ng 65s bago i-retry ang page ${i+1}...`, 'warn');
         await new Promise(r => setTimeout(r, 65000));
+        reqThisMinute = 0; minuteStart = Date.now();
         try {
-          const b64  = await fileToBase64(imgFiles[i]);
-          const mime = imgFiles[i].type;
-          const rows = await callGroq(key, b64, mime);
+          const rows = await tryExtract();
           rows.forEach(r => { r._page = i+1; });
           allRows = allRows.concat(rows);
         } catch(e2) {
@@ -731,6 +755,39 @@ function styleC(cell) {
   cell.font={ bold:true };
   cell.alignment={ horizontal:'center',vertical:'middle' };
 }
+
+// Compress + resize image before sending to AI (keeps quality, reduces tokens)
+function compressImage(file, maxPx=1600, quality=0.82) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let {width:w, height:h} = img;
+      if (w > maxPx || h > maxPx) {
+        if (w > h) { h = Math.round(h * maxPx/w); w = maxPx; }
+        else       { w = Math.round(w * maxPx/h); h = maxPx; }
+      }
+      const c = document.createElement('canvas');
+      c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      c.toBlob(blob => {
+        if (!blob) { rej(new Error('Canvas compression failed')); return; }
+        const reader = new FileReader();
+        reader.onload = () => res({
+          b64:  reader.result.split(',')[1],
+          mime: 'image/jpeg',
+          sizekb: Math.round(blob.size/1024)
+        });
+        reader.onerror = rej;
+        reader.readAsDataURL(blob);
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = rej;
+    img.src = url;
+  });
+}
+
 function fileToBase64(file) {
   return new Promise((res,rej) => {
     const r = new FileReader();
