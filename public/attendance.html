@@ -225,6 +225,13 @@ hr.div{border:none;border-top:1px solid #eceff1;margin:20px 0;}
     </div>
   </div>
 
+  <!-- Floating save button (shows after extraction) -->
+  <div id="float-save" style="display:none;position:fixed;bottom:20px;right:20px;z-index:9998;">
+    <button class="btn btn-green" onclick="doSave()" style="font-size:1rem;padding:14px 22px;box-shadow:0 4px 16px rgba(0,0,0,.3);">
+      💾 I-SAVE &amp; DOWNLOAD EXCEL
+    </button>
+  </div>
+
   <!-- Status & Progress -->
   <div id="status" onclick="this.style.display='none'" title="Click to close" style="cursor:pointer"></div>
   <div class="prog" id="prog">
@@ -446,6 +453,7 @@ async function doExtract() {
   renderResults();
   setStep(4);
   scrollToStatus();
+  document.getElementById('float-save').style.display = '';
 }
 
 async function callGemini(apiKey, imgBase64, mimeType) {
@@ -660,6 +668,7 @@ async function doSave() {
     if (unmatched.length) msg += ` ⚠ ${unmatched.length} not found — see below.`;
     showStatus(msg, unmatched.length ? 'warn' : 'ok');
     setStep(4, true);
+    document.getElementById('float-save').style.display = 'none';
 
     // update summary
     document.getElementById('summary').innerHTML = `
