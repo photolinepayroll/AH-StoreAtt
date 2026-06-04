@@ -1,382 +1,581 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>AH Store Attendance</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Photoline – AH Attendance</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: 'Segoe UI', Arial, sans-serif;
-      background: #f0f4f8;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 30px 16px;
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Segoe UI',Arial,sans-serif;background:#eef2f7;min-height:100vh;padding:24px 12px;}
+    .wrap{max-width:980px;margin:0 auto;}
+
+    /* ── Header ── */
+    .top-bar{
+      background:linear-gradient(135deg,#1a3c6e,#2563b0);
+      color:#fff;border-radius:12px 12px 0 0;
+      padding:18px 28px;display:flex;align-items:center;justify-content:space-between;
     }
-    header {
-      background: #1a3c6e;
-      color: #fff;
-      width: 100%;
-      max-width: 860px;
-      border-radius: 10px 10px 0 0;
-      padding: 20px 28px;
-      display: flex;
-      align-items: center;
-      gap: 14px;
+    .top-bar h1{font-size:1.3rem;display:flex;align-items:center;gap:10px;}
+    .top-bar .sub{font-size:.8rem;opacity:.75;margin-top:3px;}
+    .month-badge{
+      background:rgba(255,255,255,.18);border-radius:8px;
+      padding:6px 14px;font-size:.85rem;font-weight:700;
+      border:1px solid rgba(255,255,255,.3);
     }
-    header h1 { font-size: 1.4rem; }
-    header span { font-size: 0.85rem; opacity: .75; }
-    .card {
-      background: #fff;
-      width: 100%;
-      max-width: 860px;
-      border-radius: 0 0 10px 10px;
-      box-shadow: 0 4px 18px rgba(0,0,0,.1);
-      padding: 32px 28px;
+
+    /* ── Card ── */
+    .card{background:#fff;border-radius:0 0 12px 12px;box-shadow:0 4px 24px rgba(0,0,0,.1);padding:28px;}
+
+    /* ── Steps ── */
+    .steps{display:flex;gap:0;margin-bottom:28px;}
+    .step{
+      flex:1;text-align:center;padding:10px 6px;
+      border-bottom:3px solid #dde3f0;color:#90a4b4;font-size:.8rem;font-weight:600;
+      transition:all .2s;cursor:default;
     }
-    .section-title {
-      font-size: 1rem;
-      font-weight: 700;
-      color: #1a3c6e;
-      margin-bottom: 14px;
-      border-left: 4px solid #1a3c6e;
-      padding-left: 10px;
+    .step.active{border-bottom-color:#1a3c6e;color:#1a3c6e;}
+    .step.done{border-bottom-color:#43a047;color:#43a047;}
+    .step .num{
+      width:26px;height:26px;border-radius:50%;
+      background:#dde3f0;color:#607d8b;
+      display:inline-flex;align-items:center;justify-content:center;
+      font-size:.85rem;font-weight:800;margin-bottom:4px;
     }
-    .upload-area {
-      border: 2px dashed #b0bec5;
-      border-radius: 10px;
-      padding: 40px;
-      text-align: center;
-      cursor: pointer;
-      transition: border-color .2s, background .2s;
-      position: relative;
+    .step.active .num{background:#1a3c6e;color:#fff;}
+    .step.done .num{background:#43a047;color:#fff;}
+
+    /* ── Section title ── */
+    .sec{font-size:.95rem;font-weight:700;color:#1a3c6e;margin-bottom:12px;
+      padding-left:10px;border-left:4px solid #1a3c6e;}
+
+    /* ── Upload zones ── */
+    .upload-row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;}
+    .upload-box{
+      flex:1;min-width:260px;border:2px dashed #b0bec5;border-radius:10px;
+      padding:28px 16px;text-align:center;cursor:pointer;
+      transition:border-color .2s,background .2s;position:relative;
     }
-    .upload-area:hover, .upload-area.drag-over {
-      border-color: #1a3c6e;
-      background: #e8f0fe;
+    .upload-box:hover,.upload-box.over{border-color:#1a3c6e;background:#eef3ff;}
+    .upload-box input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;}
+    .upload-box .ico{font-size:2.4rem;margin-bottom:8px;}
+    .upload-box p{color:#607d8b;font-size:.88rem;line-height:1.5;}
+    .upload-box strong{color:#1a3c6e;}
+    .upload-box.has-file{border-color:#43a047;background:#f1fdf3;}
+    .upload-box.has-file p{color:#2e7d32;}
+
+    /* ── Thumbnails ── */
+    .thumbs{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;}
+    .thumb{position:relative;width:110px;}
+    .thumb img{width:110px;height:80px;object-fit:cover;border-radius:7px;
+      border:2px solid #dde3f0;display:block;}
+    .thumb .badge-page{
+      position:absolute;top:4px;left:4px;background:#1a3c6e;color:#fff;
+      font-size:.65rem;font-weight:700;padding:2px 7px;border-radius:4px;
     }
-    .upload-area input[type="file"] {
-      position: absolute; inset: 0; opacity: 0; cursor: pointer;
+    .thumb .del{
+      position:absolute;top:2px;right:2px;background:#e53935;color:#fff;
+      border:none;border-radius:50%;width:20px;height:20px;cursor:pointer;
+      font-size:.8rem;display:flex;align-items:center;justify-content:center;
     }
-    .upload-area .icon { font-size: 3rem; margin-bottom: 10px; }
-    .upload-area p { color: #607d8b; font-size: .95rem; }
-    .upload-area p strong { color: #1a3c6e; }
-    #preview-section { display: none; margin-top: 20px; }
-    #preview-img {
-      max-width: 100%; border-radius: 8px;
-      box-shadow: 0 2px 10px rgba(0,0,0,.15);
+    .thumb .name{font-size:.68rem;color:#607d8b;margin-top:3px;
+      white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+
+    /* ── Buttons ── */
+    .btn{
+      display:inline-flex;align-items:center;gap:8px;
+      padding:11px 22px;border:none;border-radius:8px;
+      font-size:.92rem;font-weight:700;cursor:pointer;transition:.15s;
     }
-    .btn {
-      display: inline-flex; align-items: center; gap: 8px;
-      padding: 12px 24px; border: none; border-radius: 8px;
-      font-size: .95rem; font-weight: 600; cursor: pointer;
-      transition: background .2s, transform .1s;
+    .btn:active{transform:scale(.97);}
+    .btn:disabled{opacity:.45;cursor:not-allowed;}
+    .btn-blue{background:#1a3c6e;color:#fff;}
+    .btn-blue:hover:not(:disabled){background:#143160;}
+    .btn-green{background:#2e7d32;color:#fff;}
+    .btn-green:hover:not(:disabled){background:#1b5e20;}
+    .btn-red{background:#c62828;color:#fff;}
+    .btn-red:hover:not(:disabled){background:#b71c1c;}
+    .btn-ghost{background:transparent;color:#1a3c6e;border:2px solid #1a3c6e;}
+    .btn-ghost:hover:not(:disabled){background:#eef3ff;}
+
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px;}
+
+    /* ── Status ── */
+    #status{display:none;margin:14px 0;padding:13px 16px;border-radius:8px;font-size:.9rem;}
+    .s-info{background:#e3f2fd;color:#1565c0;border:1px solid #90caf9;}
+    .s-ok  {background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;}
+    .s-err {background:#ffebee;color:#c62828;border:1px solid #ef9a9a;}
+    .s-warn{background:#fff8e1;color:#e65100;border:1px solid #ffcc80;}
+
+    /* ── Progress ── */
+    .prog-wrap{display:none;margin:16px 0;}
+    .prog-bar{background:#e0e7f0;border-radius:8px;height:10px;overflow:hidden;}
+    .prog-fill{background:#1a3c6e;height:100%;width:0;transition:width .3s;border-radius:8px;}
+    .prog-txt{font-size:.8rem;color:#607d8b;margin-top:5px;text-align:center;}
+
+    /* ── Summary cards ── */
+    .summary{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:18px;}
+    .scard{
+      flex:1;min-width:110px;background:#f5f7ff;border-radius:8px;
+      padding:12px 10px;text-align:center;border:1px solid #dde3f0;
     }
-    .btn:active { transform: scale(.97); }
-    .btn-primary { background: #1a3c6e; color: #fff; }
-    .btn-primary:hover { background: #143160; }
-    .btn-success { background: #2e7d32; color: #fff; }
-    .btn-success:hover { background: #256427; }
-    .btn-outline { background: transparent; color: #1a3c6e; border: 2px solid #1a3c6e; }
-    .btn-outline:hover { background: #e8f0fe; }
-    .btn:disabled { opacity: .5; cursor: not-allowed; }
-    .actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
-    #status-box {
-      margin-top: 20px; padding: 14px 18px;
-      border-radius: 8px; font-size: .92rem;
-      display: none;
+    .scard .num{font-size:2rem;font-weight:800;color:#1a3c6e;}
+    .scard .lbl{font-size:.72rem;color:#78909c;margin-top:2px;}
+
+    /* ── Table ── */
+    .tbl-wrap{overflow-x:auto;border-radius:8px;border:1px solid #dde3f0;}
+    table{width:100%;border-collapse:collapse;font-size:.85rem;}
+    th{
+      background:#1a3c6e;color:#fff;padding:9px 10px;
+      text-align:left;white-space:nowrap;
     }
-    .status-info { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
-    .status-ok   { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
-    .status-err  { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
-    .spinner {
-      width: 18px; height: 18px; border: 3px solid rgba(255,255,255,.4);
-      border-top-color: #fff; border-radius: 50%;
-      animation: spin .7s linear infinite; display: inline-block;
+    td{padding:8px 10px;border-bottom:1px solid #eceff1;vertical-align:middle;}
+    tr:nth-child(even) td{background:#f9fbff;}
+    tr:hover td{background:#eef3ff;}
+    td[contenteditable="true"]:focus{background:#fffde7;outline:2px solid #ffca28;}
+    .tag{
+      display:inline-block;padding:3px 9px;border-radius:10px;
+      font-size:.75rem;font-weight:700;white-space:nowrap;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    table {
-      width: 100%; border-collapse: collapse; margin-top: 20px;
-      font-size: .88rem;
+    .t-matched{background:#c8e6c9;color:#1b5e20;}
+    .t-new    {background:#fff3e0;color:#e65100;}
+    select.status-sel{
+      border:1px solid #cfd8dc;border-radius:6px;padding:4px 8px;
+      font-size:.82rem;background:#fff;
     }
-    th {
-      background: #1a3c6e; color: #fff; padding: 10px 12px;
-      text-align: left; white-space: nowrap;
+    .pg-chip{
+      display:inline-block;background:#e8eaf6;color:#3949ab;
+      font-size:.7rem;padding:2px 7px;border-radius:10px;font-weight:700;
     }
-    td { padding: 9px 12px; border-bottom: 1px solid #eceff1; }
-    tr:nth-child(even) td { background: #f9fbff; }
-    tr:hover td { background: #e8f0fe; }
-    .badge {
-      display: inline-block; padding: 3px 10px; border-radius: 12px;
-      font-size: .78rem; font-weight: 700;
+
+    /* ── Unmatched notice ── */
+    .unmatch-box{
+      background:#fff8e1;border:1px solid #ffcc80;border-radius:8px;
+      padding:14px 16px;margin-top:14px;font-size:.88rem;color:#e65100;
     }
-    .badge-present { background: #c8e6c9; color: #1b5e20; }
-    .badge-absent  { background: #ffcdd2; color: #b71c1c; }
-    .badge-late    { background: #fff3e0; color: #e65100; }
-    .badge-halfday { background: #e1bee7; color: #4a148c; }
-    #result-section { display: none; margin-top: 28px; }
-    .summary-grid {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 12px; margin-bottom: 20px;
+    .unmatch-box ul{margin-top:6px;padding-left:18px;}
+    .unmatch-box li{margin-bottom:3px;}
+
+    /* ── Spinner ── */
+    .spin{
+      width:16px;height:16px;border:3px solid rgba(255,255,255,.35);
+      border-top-color:#fff;border-radius:50%;
+      animation:spin .65s linear infinite;display:inline-block;flex-shrink:0;
     }
-    .summary-card {
-      background: #f5f7ff; border-radius: 8px; padding: 14px;
-      text-align: center; border: 1px solid #dde3f0;
-    }
-    .summary-card .num { font-size: 2rem; font-weight: 800; color: #1a3c6e; }
-    .summary-card .lbl { font-size: .78rem; color: #78909c; margin-top: 2px; }
-    .editable-cell { outline: none; }
-    .editable-cell:focus { background: #fff9c4; }
-    .store-info { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
-    .store-info label { font-size: .85rem; color: #607d8b; font-weight: 600; }
-    .store-info input {
-      border: 1px solid #cfd8dc; border-radius: 6px;
-      padding: 6px 10px; font-size: .9rem; width: 220px;
-    }
+    @keyframes spin{to{transform:rotate(360deg);}}
+
+    /* ── Result section ── */
+    #result-sec{display:none;margin-top:24px;}
+    .divider{border:none;border-top:1px solid #eceff1;margin:24px 0;}
   </style>
 </head>
 <body>
-  <header>
+<div class="wrap">
+
+  <!-- Header -->
+  <div class="top-bar">
     <div>
-      <h1>&#128203; AH Store Attendance</h1>
-      <span>Upload attendance photo &rarr; Extract data &rarr; Update masterlist</span>
+      <h1>&#128203; Photoline Attendance System</h1>
+      <div class="sub">Area Head &rarr; Upload Photos &rarr; Auto-Extract &rarr; Update Masterlist</div>
     </div>
-  </header>
-
-  <div class="card">
-    <!-- Upload Section -->
-    <div class="section-title">1. Upload Attendance Photo (JPEG / PNG)</div>
-    <div class="upload-area" id="drop-zone">
-      <input type="file" id="file-input" accept="image/jpeg,image/jpg,image/png" />
-      <div class="icon">&#128444;&#65039;</div>
-      <p><strong>Click to browse</strong> or drag &amp; drop your attendance photo here</p>
-      <p style="margin-top:6px;font-size:.82rem;">Supports: JPG, JPEG, PNG</p>
-    </div>
-
-    <div id="preview-section">
-      <p class="section-title" style="margin-top:24px;">2. Preview</p>
-      <div class="store-info">
-        <div>
-          <label>Store / Branch</label><br>
-          <input type="text" id="store-name" placeholder="e.g. SM North EDSA" />
-        </div>
-        <div>
-          <label>Date</label><br>
-          <input type="date" id="att-date" />
-        </div>
-      </div>
-      <img id="preview-img" src="" alt="Attendance preview" />
-      <div class="actions">
-        <button class="btn btn-primary" id="extract-btn" onclick="extractData()">
-          &#129302; Extract Attendance Data
-        </button>
-        <button class="btn btn-outline" onclick="clearAll()">&#10006; Clear</button>
-      </div>
-    </div>
-
-    <div id="status-box"></div>
-
-    <!-- Results Section -->
-    <div id="result-section">
-      <div class="section-title">3. Extracted Attendance Data</div>
-      <p style="font-size:.84rem;color:#78909c;margin-bottom:10px;">
-        You can click any cell to edit before saving.
-      </p>
-      <div class="summary-grid" id="summary-grid"></div>
-      <div style="overflow-x:auto;">
-        <table id="data-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Employee ID</th>
-              <th>Name</th>
-              <th>Position</th>
-              <th>Time In</th>
-              <th>Time Out</th>
-              <th>Status</th>
-              <th>Remarks</th>
-            </tr>
-          </thead>
-          <tbody id="table-body"></tbody>
-        </table>
-      </div>
-      <div class="actions">
-        <button class="btn btn-success" id="save-btn" onclick="saveMasterlist()">
-          &#128190; Save &amp; Update Masterlist (Excel)
-        </button>
-        <button class="btn btn-outline" onclick="downloadJSON()">
-          &#128196; Download as JSON
-        </button>
-      </div>
-    </div>
+    <div class="month-badge" id="month-label"></div>
   </div>
 
+  <div class="card">
+
+    <!-- Steps indicator -->
+    <div class="steps" id="steps">
+      <div class="step active" id="s1"><div class="num">1</div><br>Upload Masterlist</div>
+      <div class="step" id="s2"><div class="num">2</div><br>Upload Photos</div>
+      <div class="step" id="s3"><div class="num">3</div><br>Extract Data</div>
+      <div class="step" id="s4"><div class="num">4</div><br>Save &amp; Download</div>
+    </div>
+
+    <!-- ── STEP 1: Masterlist ── -->
+    <div id="step1">
+      <div class="sec">Step 1 — Upload your Masterlist Excel (.xlsx)</div>
+      <div class="upload-row">
+        <div class="upload-box" id="xl-box">
+          <input type="file" id="xl-input" accept=".xlsx,.xls"/>
+          <div class="ico">&#128200;</div>
+          <p><strong>Click to browse</strong> or drag &amp; drop<br>your <strong>Masterlist.xlsx</strong> here</p>
+        </div>
+      </div>
+      <p id="xl-name" style="font-size:.85rem;color:#2e7d32;display:none;"></p>
+      <div class="actions">
+        <button class="btn btn-blue" id="to-step2" onclick="goStep2()" disabled>
+          Next: Upload Photos &rarr;
+        </button>
+      </div>
+    </div>
+
+    <hr class="divider" id="div12" style="display:none"/>
+
+    <!-- ── STEP 2: Photo upload ── -->
+    <div id="step2" style="display:none">
+      <div class="sec">Step 2 — Upload Attendance Photos (JPEG/PNG, multiple pages OK)</div>
+      <div class="upload-row">
+        <div class="upload-box" id="img-box">
+          <input type="file" id="img-input" accept="image/jpeg,image/jpg,image/png" multiple/>
+          <div class="ico">&#128444;&#65039;</div>
+          <p><strong>Click to browse</strong> or drag &amp; drop<br>
+            One or <strong>multiple pages</strong> at once &nbsp;&#183;&nbsp; JPG / PNG</p>
+        </div>
+      </div>
+      <div class="thumbs" id="thumbs"></div>
+      <div class="actions">
+        <button class="btn btn-blue" id="extract-btn" onclick="startExtract()" disabled>
+          &#129302; Extract Attendance Data
+        </button>
+        <button class="btn btn-ghost" onclick="clearImages()">&#10006; Clear Photos</button>
+      </div>
+    </div>
+
+    <!-- Status + progress -->
+    <div id="status"></div>
+    <div class="prog-wrap" id="prog-wrap">
+      <div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
+      <div class="prog-txt" id="prog-txt"></div>
+    </div>
+
+    <!-- ── STEP 3 + 4: Results ── -->
+    <div id="result-sec">
+      <hr class="divider"/>
+      <div class="sec">Step 3 — Review Extracted Data &nbsp;<span style="font-weight:400;font-size:.82rem;color:#78909c;">(click any cell to edit)</span></div>
+
+      <div class="summary" id="summary"></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th><th>Page</th><th>Branch</th><th>Name</th>
+              <th>1–15</th><th>16–31</th><th>Status</th><th>Masterlist</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+
+      <div id="unmatch-notice"></div>
+
+      <div class="actions" style="margin-top:20px;">
+        <button class="btn btn-green" id="save-btn" onclick="saveMasterlist()">
+          &#128190; Update Masterlist &amp; Download Excel
+        </button>
+        <button class="btn btn-ghost" onclick="resetAll()">&#8635; Start Over</button>
+      </div>
+    </div>
+
+  </div><!-- /card -->
+</div><!-- /wrap -->
+
 <script>
-  let extractedRows = [];
-  let currentFile = null;
+// ── State ─────────────────────────────────────────────────────────────────────
+let masterlistFile = null;
+let imageFiles     = [];   // array of File
+let allRows        = [];   // extracted rows from all pages
 
-  // Drag & drop
-  const dropZone = document.getElementById('drop-zone');
-  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-  dropZone.addEventListener('drop', e => {
-    e.preventDefault(); dropZone.classList.remove('drag-over');
-    const f = e.dataTransfer.files[0];
-    if (f) handleFile(f);
+// ── Month label ───────────────────────────────────────────────────────────────
+(function(){
+  const d = new Date();
+  document.getElementById('month-label').textContent =
+    d.toLocaleString('en-PH',{month:'long',year:'numeric'}).toUpperCase();
+})();
+
+// ── Drag helpers ──────────────────────────────────────────────────────────────
+function initDrop(boxId, onDrop) {
+  const box = document.getElementById(boxId);
+  box.addEventListener('dragover', e => { e.preventDefault(); box.classList.add('over'); });
+  box.addEventListener('dragleave', () => box.classList.remove('over'));
+  box.addEventListener('drop', e => {
+    e.preventDefault(); box.classList.remove('over');
+    onDrop(e.dataTransfer.files);
   });
+}
 
-  document.getElementById('file-input').addEventListener('change', e => {
-    if (e.target.files[0]) handleFile(e.target.files[0]);
+// ── Step 1: Masterlist ────────────────────────────────────────────────────────
+initDrop('xl-box', files => handleMasterlist(files[0]));
+document.getElementById('xl-input').addEventListener('change', e => {
+  if (e.target.files[0]) handleMasterlist(e.target.files[0]);
+});
+
+function handleMasterlist(file) {
+  if (!file) return;
+  masterlistFile = file;
+  const box = document.getElementById('xl-box');
+  box.classList.add('has-file');
+  box.querySelector('p').innerHTML =
+    `<strong>&#10003; ${escHtml(file.name)}</strong><br><span style="font-size:.78rem">${fmtSize(file.size)}</span>`;
+  const nm = document.getElementById('xl-name');
+  nm.textContent = '✓ ' + file.name;
+  nm.style.display = 'block';
+  document.getElementById('to-step2').disabled = false;
+}
+
+function goStep2() {
+  setStep(2);
+  document.getElementById('div12').style.display = '';
+  document.getElementById('step2').style.display = '';
+}
+
+// ── Step 2: Images ────────────────────────────────────────────────────────────
+initDrop('img-box', files => addImages(Array.from(files)));
+document.getElementById('img-input').addEventListener('change', e => {
+  addImages(Array.from(e.target.files));
+  e.target.value = '';
+});
+
+function addImages(files) {
+  const valid = files.filter(f => f.type.startsWith('image/'));
+  imageFiles = imageFiles.concat(valid);
+  renderThumbs();
+  document.getElementById('extract-btn').disabled = imageFiles.length === 0;
+}
+
+function renderThumbs() {
+  const wrap = document.getElementById('thumbs');
+  wrap.innerHTML = '';
+  imageFiles.forEach((f, i) => {
+    const url = URL.createObjectURL(f);
+    const div = document.createElement('div');
+    div.className = 'thumb';
+    div.innerHTML = `
+      <img src="${url}" alt="page ${i+1}"/>
+      <span class="badge-page">Page ${i+1}</span>
+      <button class="del" onclick="removeImage(${i})" title="Remove">&#215;</button>
+      <div class="name">${escHtml(f.name)}</div>`;
+    wrap.appendChild(div);
   });
-
-  function handleFile(file) {
-    currentFile = file;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      document.getElementById('preview-img').src = ev.target.result;
-      document.getElementById('preview-section').style.display = 'block';
-      document.getElementById('result-section').style.display = 'none';
-      document.getElementById('att-date').value = new Date().toISOString().split('T')[0];
-    };
-    reader.readAsDataURL(file);
+  const box = document.getElementById('img-box');
+  if (imageFiles.length > 0) {
+    box.classList.add('has-file');
+    box.querySelector('p').innerHTML =
+      `<strong>${imageFiles.length} photo${imageFiles.length>1?'s':''} loaded</strong><br>
+       <span style="font-size:.78rem">Click/drop to add more</span>`;
+  } else {
+    box.classList.remove('has-file');
+    box.querySelector('p').innerHTML =
+      `<strong>Click to browse</strong> or drag &amp; drop<br>
+       One or <strong>multiple pages</strong> at once &nbsp;&#183;&nbsp; JPG / PNG`;
   }
+}
 
-  function setStatus(msg, type) {
-    const box = document.getElementById('status-box');
-    box.textContent = msg;
-    box.className = 'status-' + type;
-    box.style.display = 'block';
-  }
+function removeImage(i) {
+  imageFiles.splice(i, 1);
+  renderThumbs();
+  document.getElementById('extract-btn').disabled = imageFiles.length === 0;
+}
 
-  async function extractData() {
-    if (!currentFile) return;
-    const btn = document.getElementById('extract-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Analyzing image...';
-    setStatus('Sending image to AI for analysis... please wait.', 'info');
+function clearImages() {
+  imageFiles = [];
+  renderThumbs();
+  document.getElementById('extract-btn').disabled = true;
+}
 
-    const formData = new FormData();
-    formData.append('image', currentFile);
-    formData.append('store', document.getElementById('store-name').value);
-    formData.append('date', document.getElementById('att-date').value);
+// ── Step 3: Extract ───────────────────────────────────────────────────────────
+async function startExtract() {
+  if (imageFiles.length === 0) return;
+  const btn = document.getElementById('extract-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Analyzing...';
+  allRows = [];
 
+  showProg(true);
+  setStatus(`Sending ${imageFiles.length} photo(s) to AI for analysis...`, 'info');
+  setStep(3);
+
+  let done = 0;
+  for (let i = 0; i < imageFiles.length; i++) {
+    setProg(Math.round((i / imageFiles.length) * 90), `Analyzing page ${i+1} of ${imageFiles.length}...`);
+    const fd = new FormData();
+    fd.append('image', imageFiles[i]);
+    fd.append('pageNum', i + 1);
     try {
-      const res = await fetch('/api/extract', { method: 'POST', body: formData });
+      const res  = await fetch('/api/extract', { method: 'POST', body: fd });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Server error');
-      extractedRows = data.rows;
-      renderTable(data.rows, data.meta);
-      setStatus(`Successfully extracted ${data.rows.length} employee record(s). Review and edit if needed, then save.`, 'ok');
+      // tag each row with page number
+      (data.rows || []).forEach(r => { r._page = i + 1; r._file = imageFiles[i].name; });
+      allRows = allRows.concat(data.rows || []);
+      done++;
     } catch (err) {
-      setStatus('Error: ' + err.message, 'err');
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = '&#129302; Extract Attendance Data';
+      setStatus(`Error on page ${i+1}: ${err.message}`, 'err');
     }
   }
 
-  function renderTable(rows, meta) {
-    const summary = { Present: 0, Absent: 0, Late: 0, 'Half Day': 0, Other: 0 };
-    rows.forEach(r => {
-      const s = r.status || 'Other';
-      summary[s] !== undefined ? summary[s]++ : summary['Other']++;
-    });
+  setProg(100, 'Done!');
+  setTimeout(() => showProg(false), 800);
 
-    const sg = document.getElementById('summary-grid');
-    sg.innerHTML = Object.entries(summary).map(([k, v]) => `
-      <div class="summary-card"><div class="num">${v}</div><div class="lbl">${k}</div></div>
-    `).join('');
-
-    const tbody = document.getElementById('table-body');
-    tbody.innerHTML = rows.map((r, i) => `
-      <tr>
-        <td>${i + 1}</td>
-        <td contenteditable="true" class="editable-cell" data-i="${i}" data-f="emp_id">${r.emp_id || ''}</td>
-        <td contenteditable="true" class="editable-cell" data-i="${i}" data-f="name">${r.name || ''}</td>
-        <td contenteditable="true" class="editable-cell" data-i="${i}" data-f="position">${r.position || ''}</td>
-        <td contenteditable="true" class="editable-cell" data-i="${i}" data-f="time_in">${r.time_in || ''}</td>
-        <td contenteditable="true" class="editable-cell" data-i="${i}" data-f="time_out">${r.time_out || ''}</td>
-        <td>
-          <select onchange="updateStatus(${i}, this.value)">
-            ${['Present','Absent','Late','Half Day','Day Off'].map(s =>
-              `<option ${r.status===s?'selected':''}>${s}</option>`
-            ).join('')}
-          </select>
-        </td>
-        <td contenteditable="true" class="editable-cell" data-i="${i}" data-f="remarks">${r.remarks || ''}</td>
-      </tr>
-    `).join('');
-
-    // sync edits back to extractedRows
-    tbody.querySelectorAll('.editable-cell').forEach(cell => {
-      cell.addEventListener('input', () => {
-        const i = +cell.dataset.i, f = cell.dataset.f;
-        extractedRows[i][f] = cell.textContent.trim();
-      });
-    });
-
-    document.getElementById('result-section').style.display = 'block';
+  if (allRows.length === 0) {
+    setStatus('No records extracted. Please check the images.', 'err');
+    btn.disabled = false;
+    btn.innerHTML = '&#129302; Extract Attendance Data';
+    return;
   }
 
-  function updateStatus(i, val) {
-    extractedRows[i].status = val;
-  }
+  renderResults();
+  setStatus(`✓ Extracted ${allRows.length} employee records from ${done} photo(s). Review then save.`, 'ok');
+  setStep(4);
+  btn.disabled = false;
+  btn.innerHTML = '&#129302; Re-Extract';
+}
 
-  async function saveMasterlist() {
-    const btn = document.getElementById('save-btn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Saving...';
-    setStatus('Updating Excel masterlist...', 'info');
+// ── Render results table ──────────────────────────────────────────────────────
+function renderResults() {
+  // summary
+  const total = allRows.length;
+  document.getElementById('summary').innerHTML = `
+    <div class="scard"><div class="num">${imageFiles.length}</div><div class="lbl">Pages</div></div>
+    <div class="scard"><div class="num">${total}</div><div class="lbl">Records</div></div>
+    <div class="scard"><div class="num">${allRows.filter(r=>r.d1_15!==null&&r.d1_15!==undefined).length}</div><div class="lbl">With Data</div></div>
+  `;
 
-    try {
-      const res = await fetch('/api/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rows: extractedRows,
-          store: document.getElementById('store-name').value,
-          date: document.getElementById('att-date').value,
-        }),
-      });
-      if (!res.ok) {
-        const d = await res.json();
-        throw new Error(d.error || 'Save failed');
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '';
+  allRows.forEach((r, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${i+1}</td>
+      <td><span class="pg-chip">P${r._page}</span></td>
+      <td contenteditable="true" class="ec" data-i="${i}" data-f="branch">${escHtml(r.branch||'')}</td>
+      <td contenteditable="true" class="ec" data-i="${i}" data-f="name">${escHtml(r.name||'')}</td>
+      <td contenteditable="true" class="ec" data-i="${i}" data-f="d1_15">${r.d1_15!==null&&r.d1_15!==undefined?r.d1_15:''}</td>
+      <td contenteditable="true" class="ec" data-i="${i}" data-f="d16_31">${r.d16_31!==null&&r.d16_31!==undefined?r.d16_31:''}</td>
+      <td>
+        <select class="status-sel" onchange="allRows[${i}].status=this.value">
+          ${['Present','Absent','Late','Half Day','Day Off'].map(s=>
+            `<option${r.status===s?' selected':''}>${s}</option>`).join('')}
+        </select>
+      </td>
+      <td><span class="tag t-new">Pending</span></td>`;
+    tbody.appendChild(tr);
+  });
+
+  // sync edits back
+  tbody.querySelectorAll('.ec').forEach(cell => {
+    cell.addEventListener('input', () => {
+      allRows[+cell.dataset.i][cell.dataset.f] = cell.textContent.trim();
+    });
+  });
+
+  document.getElementById('result-sec').style.display = '';
+  document.getElementById('result-sec').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Step 4: Save ──────────────────────────────────────────────────────────────
+async function saveMasterlist() {
+  if (!masterlistFile || allRows.length === 0) return;
+  const btn = document.getElementById('save-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> Updating masterlist...';
+  setStatus('Matching records and updating Excel masterlist...', 'info');
+
+  const fd = new FormData();
+  fd.append('masterlist', masterlistFile);
+  fd.append('rows', JSON.stringify(allRows));
+
+  try {
+    const res = await fetch('/api/update-masterlist', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const d = await res.json().catch(()=>({}));
+      throw new Error(d.error || 'Server error');
+    }
+    const result = await res.json();
+
+    // update table tags
+    const tags = document.querySelectorAll('#tbody .tag');
+    allRows.forEach((r, i) => {
+      if (r._matched) {
+        tags[i].className = 'tag t-matched';
+        tags[i].textContent = '✓ Row ' + r._masterRow;
+      } else {
+        tags[i].className = 'tag t-new';
+        tags[i].textContent = 'Not found';
       }
-      // trigger download
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'Attendance_Masterlist.xlsx';
-      a.click();
-      URL.revokeObjectURL(url);
-      setStatus('Masterlist updated and downloaded successfully!', 'ok');
-    } catch (err) {
-      setStatus('Error: ' + err.message, 'err');
-    } finally {
-      btn.disabled = false;
-      btn.innerHTML = '&#128190; Save &amp; Update Masterlist (Excel)';
+    });
+
+    // trigger download
+    const blob = b64toBlob(result.fileBase64, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    downloadBlob(blob, result.filename || 'Attendance_Masterlist_Updated.xlsx');
+
+    let msg = `✓ ${result.matched} records updated in masterlist.`;
+    if (result.unmatched.length)
+      msg += ` ⚠ ${result.unmatched.length} not found — see below.`;
+    setStatus(msg, result.unmatched.length ? 'warn' : 'ok');
+    setStep(4, true);
+
+    if (result.unmatched.length) {
+      document.getElementById('unmatch-notice').innerHTML = `
+        <div class="unmatch-box">
+          <strong>⚠ ${result.unmatched.length} employee(s) not found in masterlist</strong>
+          — please add them manually:
+          <ul>${result.unmatched.map(u=>`<li>${escHtml(u.name)} &nbsp;|&nbsp; ${escHtml(u.branch)}</li>`).join('')}</ul>
+        </div>`;
     }
+  } catch(err) {
+    setStatus('Error: ' + err.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '&#128190; Update Masterlist &amp; Download Excel';
   }
+}
 
-  function downloadJSON() {
-    const blob = new Blob([JSON.stringify(extractedRows, null, 2)], { type: 'application/json' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'attendance_data.json';
-    a.click();
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function setStatus(msg, type) {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 's-' + type;
+  el.style.display = 'block';
+}
+function showProg(v) {
+  document.getElementById('prog-wrap').style.display = v ? '' : 'none';
+}
+function setProg(pct, txt) {
+  document.getElementById('prog-fill').style.width = pct + '%';
+  document.getElementById('prog-txt').textContent = txt;
+}
+function setStep(n, done) {
+  for (let i = 1; i <= 4; i++) {
+    const s = document.getElementById('s' + i);
+    s.classList.remove('active','done');
+    if (i < n) s.classList.add('done');
+    else if (i === n) s.classList.add(done ? 'done' : 'active');
   }
-
-  function clearAll() {
-    currentFile = null;
-    extractedRows = [];
-    document.getElementById('file-input').value = '';
-    document.getElementById('preview-section').style.display = 'none';
-    document.getElementById('result-section').style.display = 'none';
-    document.getElementById('status-box').style.display = 'none';
-  }
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtSize(b) {
+  return b > 1048576 ? (b/1048576).toFixed(1)+' MB' : (b/1024).toFixed(0)+' KB';
+}
+function b64toBlob(b64, type) {
+  const bin = atob(b64), arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], { type });
+}
+function downloadBlob(blob, name) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function resetAll() {
+  masterlistFile = null; imageFiles = []; allRows = [];
+  document.getElementById('xl-box').classList.remove('has-file');
+  document.getElementById('xl-box').querySelector('p').innerHTML =
+    `<strong>Click to browse</strong> or drag &amp; drop<br>your <strong>Masterlist.xlsx</strong> here`;
+  document.getElementById('xl-name').style.display = 'none';
+  document.getElementById('to-step2').disabled = true;
+  document.getElementById('step2').style.display = 'none';
+  document.getElementById('div12').style.display = 'none';
+  document.getElementById('result-sec').style.display = 'none';
+  document.getElementById('unmatch-notice').innerHTML = '';
+  document.getElementById('thumbs').innerHTML = '';
+  document.getElementById('status').style.display = 'none';
+  document.getElementById('extract-btn').disabled = true;
+  document.getElementById('extract-btn').innerHTML = '&#129302; Extract Attendance Data';
+  setStep(1);
+}
 </script>
 </body>
 </html>
