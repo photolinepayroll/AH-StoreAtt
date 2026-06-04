@@ -385,9 +385,9 @@ async function doExtract() {
   showProg(true); setStep(3);
   scrollToStatus();
 
-  // Groq free tier: 30 req/min → safe gap = 2.5s between requests
-  // For large batches (>10) add a bit more breathing room
-  const GAP_MS = imgFiles.length > 10 ? 3000 : 2500;
+  // Groq free tier: 30,000 TPM, ~2,000-3,000 tokens per image after compression
+  // Safe pacing: 9s gap keeps token usage ~6,600/min, well under 30,000 TPM
+  const GAP_MS = 9000;
   let reqThisMinute = 0, minuteStart = Date.now();
 
   const errors = [];
@@ -427,10 +427,13 @@ async function doExtract() {
       allRows = allRows.concat(rows);
     } catch(e) {
       console.error('Page '+(i+1)+' error:', e);
-      const isQuota = e.message.includes('429') || e.message.toLowerCase().includes('quota') || e.message.includes('rate_limit');
+      const isQuota = e.message.includes('429') || e.message.toLowerCase().includes('rate limit') || e.message.includes('rate_limit') || e.message.toLowerCase().includes('too many');
       if (isQuota) {
-        showStatus(`⏳ Rate limit — naghihintay ng 65s bago i-retry ang page ${i+1}...`, 'warn');
-        await new Promise(r => setTimeout(r, 65000));
+        // Parse retry time from Groq error: "Please try again in 12.5s"
+        const retryMatch = e.message.match(/try again in ([\d.]+)s/i);
+        const retrySec = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) + 3 : 65;
+        showStatus(`⏳ Rate limit (TPM) — naghihintay ng ${retrySec}s bago i-retry ang page ${i+1}...`, 'warn');
+        await new Promise(r => setTimeout(r, retrySec * 1000));
         reqThisMinute = 0; minuteStart = Date.now();
         try {
           const rows = await tryExtract();
@@ -792,7 +795,7 @@ function styleC(cell) {
 
 // Compress + enhance image before sending to AI
 // enhance=true: boost contrast & sharpen for hard-to-read sheets
-function compressImage(file, maxPx=1800, quality=0.88, enhance=true) {
+function compressImage(file, maxPx=1200, quality=0.78, enhance=true) {
   return new Promise((res, rej) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
