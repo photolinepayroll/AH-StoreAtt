@@ -145,6 +145,14 @@ hr.div{border:none;border-top:1px solid #eceff1;margin:20px 0;}
       <button class="btn btn-ghost" onclick="clearImgs()">✕ Clear</button>
     </div>
   </div>
+
+  <!-- Floating save button (shows after extraction) -->
+  <div id="float-save" style="display:none;position:fixed;bottom:20px;right:20px;z-index:9998;">
+    <button class="btn btn-green" onclick="doSave()" style="font-size:1rem;padding:14px 22px;box-shadow:0 4px 16px rgba(0,0,0,.3);">
+      💾 I-SAVE &amp; DOWNLOAD EXCEL
+    </button>
+  </div>
+
   <div id="status" onclick="this.style.display='none'" title="Click to close" style="cursor:pointer"></div>
   <div class="prog" id="prog">
     <div class="prog-bar"><div class="prog-fill" id="prog-fill"></div></div>
@@ -246,6 +254,7 @@ async function doExtract(){
   if(errors.length)showStatus(`⚠️ ${allRows.length} records extracted pero may error sa ${errors.length} page(s): ${errors.join(' | ')}`,'warn');
   else showStatus(`✅ ${allRows.length} employees extracted mula sa ${imgFiles.length} photo(s). I-review tapos i-save.`,'ok');
   renderResults();setStep(4);
+  document.getElementById('float-save').style.display='';
 }
 function parseResp(raw){
   if(!raw)throw new Error('Empty response from AI.');
@@ -320,6 +329,7 @@ async function doSave(){
     let msg=`✓ ${matchedCount} records updated.`;
     if(unmatched.length)msg+=` ⚠ ${unmatched.length} not found — see below.`;
     showStatus(msg,unmatched.length?'warn':'ok');setStep(4,true);
+    document.getElementById('float-save').style.display='none';
     document.getElementById('summary').innerHTML=`<div class="sc"><div class="n">${imgFiles.length}</div><div class="l">Pages</div></div><div class="sc"><div class="n">${allRows.length}</div><div class="l">Records</div></div><div class="sc"><div class="n">${matchedCount}</div><div class="l">Updated ✓</div></div><div class="sc"><div class="n">${unmatched.length}</div><div class="l">Not Found</div></div>`;
     if(unmatched.length)document.getElementById('unmatch').innerHTML=`<div class="unmatch"><strong>⚠ ${unmatched.length} hindi nahanap sa masterlist</strong> — idagdag mo manually:<ul>${unmatched.map(u=>`<li>${esc(u.name)} | ${esc(u.branch)}</li>`).join('')}</ul></div>`;
   }catch(e){showStatus('Error: '+e.message,'err');console.error(e);}
@@ -339,7 +349,7 @@ function setProg(p,t){document.getElementById('prog-fill').style.width=p+'%';doc
 function setStep(n,done){for(let i=1;i<=4;i++){const s=document.getElementById('s'+i);s.classList.remove('active','done');if(i<n)s.classList.add('done');else if(i===n)s.classList.add(done?'done':'active');}}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function fmtSz(b){return b>1048576?(b/1048576).toFixed(1)+' MB':(b/1024).toFixed(0)+' KB';}
-function resetAll(){xlFile=null;imgFiles=[];allRows=[];['xl-box','img-box'].forEach(id=>{document.getElementById(id).classList.remove('filled','over');});document.getElementById('xl-box').querySelector('p').innerHTML=`<strong>Click here</strong> or drag &amp; drop<br>your <strong>Masterlist.xlsx</strong>`;document.getElementById('img-box').querySelector('p').innerHTML=`<strong>Click here</strong> or drag &amp; drop<br>Pwede <strong>marami</strong> (Page 1, Page 2, etc.)`;document.getElementById('btn-step2').disabled=true;document.getElementById('btn-extract').disabled=true;document.getElementById('step2').style.display='none';document.getElementById('div12').style.display='none';document.getElementById('result-sec').style.display='none';document.getElementById('unmatch').innerHTML='';document.getElementById('thumbs').innerHTML='';document.getElementById('status').style.display='none';document.getElementById('prog').style.display='none';setStep(1);}
+function resetAll(){xlFile=null;imgFiles=[];allRows=[];['xl-box','img-box'].forEach(id=>{document.getElementById(id).classList.remove('filled','over');});document.getElementById('xl-box').querySelector('p').innerHTML=`<strong>Click here</strong> or drag &amp; drop<br>your <strong>Masterlist.xlsx</strong>`;document.getElementById('img-box').querySelector('p').innerHTML=`<strong>Click here</strong> or drag &amp; drop<br>Pwede <strong>marami</strong> (Page 1, Page 2, etc.)`;document.getElementById('btn-step2').disabled=true;document.getElementById('btn-extract').disabled=true;document.getElementById('step2').style.display='none';document.getElementById('div12').style.display='none';document.getElementById('result-sec').style.display='none';document.getElementById('unmatch').innerHTML='';document.getElementById('thumbs').innerHTML='';document.getElementById('status').style.display='none';document.getElementById('prog').style.display='none';document.getElementById('float-save').style.display='none';setStep(1);}
 </script>
 </body>
 </html>
