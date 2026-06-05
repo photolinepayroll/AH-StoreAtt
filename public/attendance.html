@@ -6,6 +6,18 @@
 <title>Photoline – Attendance Tool</title>
 <!-- ExcelJS for reading/writing Excel directly in browser -->
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<!-- PDF.js for reading text-based PDF attendance reports -->
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs" type="module"></script>
+<script>
+// PDF.js worker setup (non-module context shim)
+window._pdfJsReady = false;
+import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs').then(pdfjsLib => {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
+  window.pdfjsLib = pdfjsLib;
+  window._pdfJsReady = true;
+}).catch(()=>{});
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',Arial,sans-serif;background:#eef2f7;min-height:100vh;padding:20px 10px;}
@@ -203,24 +215,24 @@ hr.div{border:none;border-top:1px solid #eceff1;margin:20px 0;}
 
   <hr class="div" id="div12" style="display:none"/>
 
-  <!-- Step 2: Photos -->
+  <!-- Step 2: Photos / PDFs -->
   <div id="step2" style="display:none">
-    <div class="sec">Step 2 — Upload Attendance Photos</div>
+    <div class="sec">Step 2 — Upload Attendance Files</div>
     <div class="uprow">
       <div class="upbox" id="img-box">
-        <input type="file" id="img-inp" accept="image/jpeg,image/jpg,image/png" multiple/>
+        <input type="file" id="img-inp" accept="image/jpeg,image/jpg,image/png,application/pdf,.pdf" multiple/>
         <div class="ico">🖼️</div>
-        <p id="img-box-txt"><strong>Click here</strong> o i-drag ang photo<br>
-          Pwede pumili ng <strong>marami nang sabay</strong></p>
+        <p id="img-box-txt"><strong>Click here</strong> o i-drag<br>
+          JPEG / PNG photos <strong>o PDF</strong> — pwede marami</p>
       </div>
     </div>
-    <!-- Add more button — shown after first image added -->
+    <!-- Add more button — shown after first file added -->
     <div id="add-more-wrap" style="display:none;margin-top:8px;">
       <label style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;
         background:#e8f0fe;border:2px dashed #1a3c6e;border-radius:8px;
         padding:8px 16px;font-size:.85rem;font-weight:700;color:#1a3c6e;">
-        <input type="file" id="img-inp2" accept="image/jpeg,image/jpg,image/png" multiple style="display:none"/>
-        ➕ Dagdag pa (Page 2, Page 3…)
+        <input type="file" id="img-inp2" accept="image/jpeg,image/jpg,image/png,application/pdf,.pdf" multiple style="display:none"/>
+        ➕ Dagdag pa (JPEG o PDF)
       </label>
     </div>
     <div class="thumbs" id="thumbs"></div>
@@ -330,7 +342,10 @@ function goStep2() {
 
 // ── Step 2: Images ─────────────────────────────────────────────────────────────
 function addImgs(files) {
-  imgFiles = imgFiles.concat(files.filter(f => f.type.startsWith('image/')));
+  const accepted = Array.from(files).filter(f =>
+    f.type.startsWith('image/') || f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+  );
+  imgFiles = imgFiles.concat(accepted);
   renderThumbs();
   document.getElementById('btn-extract').disabled = imgFiles.length === 0;
 }
@@ -344,37 +359,122 @@ function renderThumbs() {
   const w = document.getElementById('thumbs');
   w.innerHTML = '';
   imgFiles.forEach((f,i) => {
-    const url = URL.createObjectURL(f);
-    const d   = document.createElement('div'); d.className='thumb';
-    d.innerHTML = `<img src="${url}"><span class="pg">P${i+1}</span>
-      <button class="rm" onclick="removeImg(${i})">✕</button>
-      <div class="nm">${esc(f.name)}</div>`;
+    const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+    const d = document.createElement('div'); d.className='thumb';
+    if (isPdf) {
+      d.innerHTML = `<div style="width:100px;height:72px;background:#fff3e0;border-radius:6px;
+        border:2px solid #ff9800;display:flex;align-items:center;justify-content:center;font-size:1.8rem;">📄</div>
+        <span class="pg">P${i+1}</span>
+        <button class="rm" onclick="removeImg(${i})">✕</button>
+        <div class="nm">${esc(f.name)}</div>`;
+    } else {
+      const url = URL.createObjectURL(f);
+      d.innerHTML = `<img src="${url}"><span class="pg">P${i+1}</span>
+        <button class="rm" onclick="removeImg(${i})">✕</button>
+        <div class="nm">${esc(f.name)}</div>`;
+    }
     w.appendChild(d);
   });
+  const imgCount = imgFiles.filter(f => !f.name.toLowerCase().endsWith('.pdf') && f.type !== 'application/pdf').length;
+  const pdfCount = imgFiles.length - imgCount;
   const box      = document.getElementById('img-box');
   const addMore  = document.getElementById('add-more-wrap');
   const pgCount  = document.getElementById('page-count');
   if (imgFiles.length) {
     box.classList.add('filled');
+    const parts = [];
+    if (imgCount) parts.push(`${imgCount} photo${imgCount>1?'s':''}`);
+    if (pdfCount) parts.push(`${pdfCount} PDF${pdfCount>1?'s':''}`);
     document.getElementById('img-box-txt').innerHTML =
-      `<strong>✓ ${imgFiles.length} photo${imgFiles.length>1?'s':''} na-upload</strong><br><span style="font-size:.72rem;color:#2e7d32">Pwede dagdagan pa</span>`;
+      `<strong>✓ ${parts.join(' + ')} na-upload</strong><br><span style="font-size:.72rem;color:#2e7d32">Pwede dagdagan pa</span>`;
     addMore.style.display = '';
     pgCount.style.display = '';
-    pgCount.textContent   = `📄 ${imgFiles.length} page${imgFiles.length>1?'s':''} ang i-process ng AI`;
+    const aiNote = imgCount ? ` (${imgCount} via AI, ${pdfCount} direct parse)` : ` (direct text parse — no AI tokens used)`;
+    pgCount.textContent = `📄 ${imgFiles.length} file${imgFiles.length>1?'s':''} ang i-process${pdfCount ? aiNote : ''}`;
   } else {
     box.classList.remove('filled');
     document.getElementById('img-box-txt').innerHTML =
-      `<strong>Click here</strong> o i-drag ang photo<br>Pwede pumili ng <strong>marami nang sabay</strong>`;
+      `<strong>Click here</strong> o i-drag<br>JPEG / PNG photos <strong>o PDF</strong> — pwede marami`;
     addMore.style.display = 'none';
     pgCount.style.display = 'none';
   }
 }
 
-// ── Step 3: Extract via Groq API ─────────────────────────────────────────────
+// ── PDF text extractor & parser (no AI needed) ───────────────────────────────
+async function extractPdfRows(file, pageNum) {
+  if (!window.pdfjsLib) throw new Error('PDF.js hindi pa na-load. I-refresh ang page.');
+  const buf  = await fileToArrayBuffer(file);
+  const pdf  = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  let fullText = '';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page    = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    fullText += content.items.map(i => i.str).join('\n') + '\n';
+  }
+  return parsePdfAttendance(fullText, pageNum);
+}
+
+function parsePdfAttendance(text, pageNum) {
+  const rows = [];
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  let branch = '';
+  let pending = '';
+
+  // Patterns
+  const SKIP   = /^(good\s|attendance\s+for|month\s+of|\d+\s+employee|may\s+1[-–]\d|may\s*\d+[-–]|\d+[-–]\d+\s*$/i.test.bind(/^(good\s|attendance\s+for|month\s+of|\d+\s+employee|may\s+1[-–]\d|may\s*\d+[-–])/i));
+  const BRANCH = /\b(SM|LCC|ROB(?:INSONS?)?|AYALA|EMALL|R\.?IMUS|TERMINAL\s+MARKET|BACOOR|SORSOGON|ROSARIO|TANZA|DAET|NAGA|LEGAZPI|ILOILO|BACOLOD|ROXAS|ANTIQUE|POLANGUI|TABACO)\b/i;
+  const ATT_ONLY   = /^(\d+)\s*(?:days?)?\s*[\/\\]\s*(\d+)/i;
+  const ATT_INLINE = /^(.+?)[\s:=\-]+(\d+)\s*(?:days?)?\s*[\/\\]\s*(\d+)\s*(?:days?)?(?:\s*\(.*\))?\s*$/i;
+
+  for (const line of lines) {
+    // Skip header / meta lines
+    if (/^(good\s|attendance\s+for|month\s+of|\d+\s+employee|may\s+(1-|1–|\d+[-–]))/i.test(line)) {
+      pending = ''; continue;
+    }
+
+    // Standalone attendance line "14 / 13"
+    const attOnly = line.match(ATT_ONLY);
+    if (attOnly && pending) {
+      rows.push({ branch, name: pending.toUpperCase(), d1_15: +attOnly[1], d16_31: +attOnly[2], _page: pageNum });
+      pending = ''; continue;
+    }
+
+    // Inline attendance "NAME-13/14" or "NAME=13 days / 14 days" or "NAME: 13/14"
+    const inl = line.match(ATT_INLINE);
+    if (inl) {
+      const name = inl[1].replace(/[\-:=\s]+$/, '').trim();
+      if (name && !/^\d+$/.test(name) && name.split(' ').length >= 1) {
+        // Could be a branch line that happens to have numbers — skip if branch keyword
+        if (!BRANCH.test(name) || name.split(' ').length > 3) {
+          rows.push({ branch, name: name.toUpperCase(), d1_15: +inl[2], d16_31: +inl[3], _page: pageNum });
+          pending = ''; continue;
+        }
+      }
+    }
+
+    // Branch header
+    if (BRANCH.test(line) && !ATT_ONLY.test(line) && !inl) {
+      branch = line.toUpperCase().trim();
+      pending = ''; continue;
+    }
+
+    // Probably a name (no digits, at least 2 words)
+    if (!/\d/.test(line) && line.split(/\s+/).length >= 2) {
+      pending = line;
+    } else {
+      pending = '';
+    }
+  }
+  return rows;
+}
+
+// ── Step 3: Extract via Groq API (images) or direct parse (PDFs) ─────────────
 async function doExtract() {
+  const hasPdfs  = imgFiles.some(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+  const hasImgs  = imgFiles.some(f => f.type.startsWith('image/'));
   const key = document.getElementById('api-key').value.trim();
-  if (!key) {
-    showStatus('I-enter muna ang iyong Groq API key sa taas. Kuhanin sa console.groq.com/keys (LIBRE).', 'err');
+  if (hasImgs && !key) {
+    showStatus('I-enter muna ang iyong Groq API key sa taas. Kuhanin sa console.groq.com/keys (LIBRE). (Para sa PDF lang, hindi na kailangan ng key.)', 'err');
     scrollToStatus(); return;
   }
   if (imgFiles.length === 0) return;
@@ -392,7 +492,28 @@ async function doExtract() {
 
   const errors = [];
   for (let i = 0; i < imgFiles.length; i++) {
-    const pct = Math.round(((i+0.5)/imgFiles.length)*90);
+    const pct  = Math.round(((i+0.5)/imgFiles.length)*90);
+    const file = imgFiles[i];
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+    // ── PDF: direct text parse — no API call, no tokens used ──────────────────
+    if (isPdf) {
+      setProg(pct, `File ${i+1} / ${imgFiles.length} — parsing PDF...`);
+      showStatus(`📄 Parsing PDF ${i+1} of ${imgFiles.length} (no AI needed)...`, 'info');
+      try {
+        const rows = await extractPdfRows(file, i+1);
+        if (rows.length === 0) {
+          errors.push(`File ${i+1} (${file.name}): No records found in PDF — baka scanned image PDF (hindi text-based)`);
+        } else {
+          allRows = allRows.concat(rows);
+        }
+      } catch(e) {
+        errors.push(`File ${i+1} (${file.name}): ${e.message}`);
+      }
+      continue; // skip Groq call entirely for PDFs
+    }
+
+    // ── Image: send to Groq AI ────────────────────────────────────────────────
     setProg(pct, `Page ${i+1} / ${imgFiles.length} — compressing...`);
     showStatus(`🔍 Page ${i+1} of ${imgFiles.length} — analyzing...`, 'info');
 
