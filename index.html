@@ -819,18 +819,21 @@ async function doSave() {
       if (last) emps.push({ rn, last, first, middle, branch });
     });
 
-    // Reset column-level style for E and F (source of persistent template blue)
-    const noFill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFFFFF' } };
+    // Strip ALL fills from columns E and F — column-level and every cell
+    const whiteFill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFFFFF' } };
+    const plainFont = { bold:false };
     [5,6].forEach(ci => {
       const col = ws.getColumn(ci);
-      col.style = Object.assign({}, col.style||{}, { fill: noFill, font:{} });
+      try { col.style = { fill: whiteFill, font: plainFont }; } catch(e){}
     });
-
-    // Pre-clear ALL masterlist rows so template blue doesn't bleed through
-    emps.forEach(({ rn }) => {
-      const row = ws.getRow(rn);
-      clearC(row.getCell(5));
-      clearC(row.getCell(6));
+    ws.eachRow((row, rn) => {
+      if (rn < 3) return;
+      [5,6].forEach(ci => {
+        const cell = row.getCell(ci);
+        cell.fill  = whiteFill;
+        cell.font  = plainFont;
+        cell.value = null;
+      });
       row.commit();
     });
 
@@ -844,12 +847,9 @@ async function doSave() {
         const row = ws.getRow(hit.rn);
         const v1  = rec.d1_15  !== '' && rec.d1_15  != null ? Number(rec.d1_15)  : NaN;
         const v2  = rec.d16_31 !== '' && rec.d16_31 != null ? Number(rec.d16_31) : NaN;
-        let wrote = false;
-        if (!isNaN(v1) && isFinite(v1)) { row.getCell(5).value = v1; styleC(row.getCell(5)); wrote=true; }
-        else { clearC(row.getCell(5)); } // remove pre-existing blue from empty cell
-        if (!isNaN(v2) && isFinite(v2)) { row.getCell(6).value = v2; styleC(row.getCell(6)); wrote=true; }
-        else { clearC(row.getCell(6)); } // remove pre-existing blue from empty cell
-        if (wrote) row.commit();
+        if (!isNaN(v1) && isFinite(v1)) { row.getCell(5).value = v1; styleC(row.getCell(5)); }
+        if (!isNaN(v2) && isFinite(v2)) { row.getCell(6).value = v2; styleC(row.getCell(6)); }
+        row.commit();
         rec._matched   = true;
         rec._masterRow = hit.rn;
         rec._matchName = `${hit.last}, ${hit.first}`;
