@@ -819,22 +819,13 @@ async function doSave() {
       if (last) emps.push({ rn, last, first, middle, branch });
     });
 
-    // Strip ALL fills from columns E and F — column-level and every cell
-    const whiteFill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFFFFF' } };
-    const plainFont = { bold:false };
+    // Remove ALL formatting from columns E and F entirely
     [5,6].forEach(ci => {
-      const col = ws.getColumn(ci);
-      try { col.style = { fill: whiteFill, font: plainFont }; } catch(e){}
-    });
-    ws.eachRow((row, rn) => {
-      if (rn < 3) return;
-      [5,6].forEach(ci => {
-        const cell = row.getCell(ci);
-        cell.fill  = whiteFill;
-        cell.font  = plainFont;
+      try { ws.getColumn(ci).style = {}; } catch(e){}
+      ws.getColumn(ci).eachCell({ includeEmpty: true }, cell => {
+        cell.style = {};
         cell.value = null;
       });
-      row.commit();
     });
 
     const unmatched = [];
