@@ -994,8 +994,8 @@ function styleC(cell) {
   cell.alignment={ horizontal:'center',vertical:'middle' };
 }
 function clearC(cell) {
-  cell.fill={ type:'pattern',pattern:'none' };
-  cell.font={};
+  cell.fill = undefined;
+  cell.font = undefined;
   cell.value=null;
 }
 
