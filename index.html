@@ -683,8 +683,8 @@ Return ONLY this JSON (no markdown, no explanation):
 Field rules:
 - branch: the store/branch name from the header (same for all rows on this page)
 - name: full name EXACTLY as written, UPPERCASE
-- d1_15: integer days present for 1st half of month; null if blank or unreadable
-- d16_31: integer days present for 2nd half of month; null if blank or unreadable
+- d1_15: integer days present for 1st half of month; use null if blank, unreadable, or shows a dash ("-" or "–" or "—")
+- d16_31: integer days present for 2nd half of month; use null if blank, unreadable, or shows a dash ("-" or "–" or "—"); NEVER copy a number from a different row
 - INCLUDE every row with a name — even if attendance columns are empty/null
 - Do NOT include column headers or blank rows`;
 
