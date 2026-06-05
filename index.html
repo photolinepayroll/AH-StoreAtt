@@ -6,6 +6,18 @@
 <title>Photoline – Attendance Tool</title>
 <!-- ExcelJS for reading/writing Excel directly in browser -->
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<!-- PDF.js for reading text-based PDF attendance reports -->
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs" type="module"></script>
+<script>
+// PDF.js worker setup (non-module context shim)
+window._pdfJsReady = false;
+import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs').then(pdfjsLib => {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
+  window.pdfjsLib = pdfjsLib;
+  window._pdfJsReady = true;
+}).catch(()=>{});
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Segoe UI',Arial,sans-serif;background:#eef2f7;min-height:100vh;padding:20px 10px;}
@@ -130,7 +142,8 @@ tr:hover td{background:#eef3ff;}
 td[contenteditable="true"]:focus{background:#fffde7;outline:2px solid #ffca28;}
 .tag{display:inline-block;padding:3px 8px;border-radius:10px;font-size:.7rem;font-weight:700;}
 .t-ok{background:#c8e6c9;color:#1b5e20;}
-.t-no{background:#fff3e0;color:#e65100;}
+.t-fuzzy{background:#fff9c4;color:#f57f17;}
+.t-no{background:#ffcdd2;color:#b71c1c;}
 .pg-chip{background:#e8eaf6;color:#3949ab;font-size:.68rem;padding:2px 6px;border-radius:8px;font-weight:700;}
 select.sel{border:1px solid #cfd8dc;border-radius:5px;padding:3px 7px;font-size:.78rem;}
 
@@ -164,10 +177,7 @@ hr.div{border:none;border-top:1px solid #eceff1;margin:20px 0;}
   <!-- API Key bar -->
   <div class="apibar">
     <label>🔑 API Key:</label>
-    <select id="api-provider" onchange="switchProvider()" style="border:1px solid #c7d4f0;border-radius:6px;padding:7px 10px;font-size:.85rem;background:#fff;">
-      <option value="groq">Groq (FREE – recommended)</option>
-      <option value="gemini">Google Gemini (FREE)</option>
-    </select>
+    <span style="font-size:.85rem;font-weight:700;color:#1a3c6e;padding:7px 10px;background:#e8f0fe;border-radius:6px;">Groq (FREE)</span>
     <input type="password" id="api-key" placeholder="gsk_..." autocomplete="off"/>
     <button class="save-key" onclick="saveKey()">Save Key</button>
     <span class="key-ok" id="key-ok" style="display:none">✓ Key saved</span>
@@ -205,18 +215,28 @@ hr.div{border:none;border-top:1px solid #eceff1;margin:20px 0;}
 
   <hr class="div" id="div12" style="display:none"/>
 
-  <!-- Step 2: Photos -->
+  <!-- Step 2: Photos / PDFs -->
   <div id="step2" style="display:none">
-    <div class="sec">Step 2 — Upload Attendance Photos (multiple pages OK)</div>
+    <div class="sec">Step 2 — Upload Attendance Files</div>
     <div class="uprow">
       <div class="upbox" id="img-box">
-        <input type="file" id="img-inp" accept="image/jpeg,image/jpg,image/png" multiple/>
+        <input type="file" id="img-inp" accept="image/jpeg,image/jpg,image/png,application/pdf,.pdf" multiple/>
         <div class="ico">🖼️</div>
-        <p><strong>Click here</strong> or drag &amp; drop<br>
-          Pwede <strong>marami</strong> (Page 1, Page 2, etc.)</p>
+        <p id="img-box-txt"><strong>Click here</strong> o i-drag<br>
+          JPEG / PNG photos <strong>o PDF</strong> — pwede marami</p>
       </div>
     </div>
+    <!-- Add more button — shown after first file added -->
+    <div id="add-more-wrap" style="display:none;margin-top:8px;">
+      <label style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+        background:#e8f0fe;border:2px dashed #1a3c6e;border-radius:8px;
+        padding:8px 16px;font-size:.85rem;font-weight:700;color:#1a3c6e;">
+        <input type="file" id="img-inp2" accept="image/jpeg,image/jpg,image/png,application/pdf,.pdf" multiple style="display:none"/>
+        ➕ Dagdag pa (JPEG o PDF)
+      </label>
+    </div>
     <div class="thumbs" id="thumbs"></div>
+    <div id="page-count" style="font-size:.8rem;color:#1a3c6e;font-weight:700;margin-top:6px;display:none;"></div>
     <div class="acts">
       <button class="btn btn-blue" id="btn-extract" onclick="doExtract()" disabled>
         🤖 Extract Attendance Data
@@ -281,35 +301,14 @@ let xlData   = null;   // parsed masterlist {employees:[{rn,last,first,branch}],
 document.getElementById('month-lbl').textContent =
   new Date().toLocaleString('en-PH',{month:'long',year:'numeric'}).toUpperCase();
 
-// Load saved keys
-const savedGroq   = localStorage.getItem('ph_groq_key');
-const savedGemini = localStorage.getItem('ph_gemini_key');
+// Load saved Groq key
+const savedGroq = localStorage.getItem('ph_groq_key');
 if (savedGroq) { document.getElementById('api-key').value = savedGroq; document.getElementById('key-ok').style.display=''; }
-
-function switchProvider() {
-  const p = document.getElementById('api-provider').value;
-  const inp = document.getElementById('api-key');
-  const hint = document.getElementById('api-hint');
-  document.getElementById('key-ok').style.display='none';
-  if (p === 'groq') {
-    inp.placeholder = 'gsk_...';
-    const k = localStorage.getItem('ph_groq_key') || '';
-    inp.value = k;
-    hint.innerHTML = 'LIBRE — kuhanin sa <a href="https://console.groq.com/keys" target="_blank" style="color:#1a3c6e;font-weight:700;">console.groq.com/keys</a> &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito &nbsp;| 30 req/min, 1000/day';
-  } else {
-    inp.placeholder = 'AIza...';
-    const k = localStorage.getItem('ph_gemini_key') || '';
-    inp.value = k;
-    hint.innerHTML = 'LIBRE — kuhanin sa <a href="https://aistudio.google.com/apikey" target="_blank" style="color:#1a3c6e;font-weight:700;">aistudio.google.com/apikey</a> &nbsp;→ "Create API key" &nbsp;→ copy &nbsp;→ i-paste dito';
-  }
-  if (document.getElementById('api-key').value) document.getElementById('key-ok').style.display='';
-}
 
 function saveKey() {
   const k = document.getElementById('api-key').value.trim();
   if (!k) return;
-  const p = document.getElementById('api-provider').value;
-  localStorage.setItem(p === 'groq' ? 'ph_groq_key' : 'ph_gemini_key', k);
+  localStorage.setItem('ph_groq_key', k);
   document.getElementById('key-ok').style.display = '';
 }
 
@@ -324,6 +323,7 @@ initDrop('xl-box',  f => handleXl(f[0]));
 initDrop('img-box', f => addImgs(Array.from(f)));
 document.getElementById('xl-inp').addEventListener('change', e => { if(e.target.files[0]) handleXl(e.target.files[0]); });
 document.getElementById('img-inp').addEventListener('change', e => { addImgs(Array.from(e.target.files)); e.target.value=''; });
+document.getElementById('img-inp2').addEventListener('change', e => { addImgs(Array.from(e.target.files)); e.target.value=''; });
 
 // ── Step 1: Masterlist ─────────────────────────────────────────────────────────
 function handleXl(file) {
@@ -342,7 +342,10 @@ function goStep2() {
 
 // ── Step 2: Images ─────────────────────────────────────────────────────────────
 function addImgs(files) {
-  imgFiles = imgFiles.concat(files.filter(f => f.type.startsWith('image/')));
+  const accepted = Array.from(files).filter(f =>
+    f.type.startsWith('image/') || f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+  );
+  imgFiles = imgFiles.concat(accepted);
   renderThumbs();
   document.getElementById('btn-extract').disabled = imgFiles.length === 0;
 }
@@ -356,28 +359,153 @@ function renderThumbs() {
   const w = document.getElementById('thumbs');
   w.innerHTML = '';
   imgFiles.forEach((f,i) => {
-    const url = URL.createObjectURL(f);
-    const d   = document.createElement('div'); d.className='thumb';
-    d.innerHTML = `<img src="${url}"><span class="pg">P${i+1}</span>
-      <button class="rm" onclick="removeImg(${i})">✕</button>
-      <div class="nm">${esc(f.name)}</div>`;
+    const isPdf = f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf');
+    const d = document.createElement('div'); d.className='thumb';
+    if (isPdf) {
+      d.innerHTML = `<div style="width:100px;height:72px;background:#fff3e0;border-radius:6px;
+        border:2px solid #ff9800;display:flex;align-items:center;justify-content:center;font-size:1.8rem;">📄</div>
+        <span class="pg">P${i+1}</span>
+        <button class="rm" onclick="removeImg(${i})">✕</button>
+        <div class="nm">${esc(f.name)}</div>`;
+    } else {
+      const url = URL.createObjectURL(f);
+      d.innerHTML = `<img src="${url}"><span class="pg">P${i+1}</span>
+        <button class="rm" onclick="removeImg(${i})">✕</button>
+        <div class="nm">${esc(f.name)}</div>`;
+    }
     w.appendChild(d);
   });
-  const box = document.getElementById('img-box');
+  const imgCount = imgFiles.filter(f => !f.name.toLowerCase().endsWith('.pdf') && f.type !== 'application/pdf').length;
+  const pdfCount = imgFiles.length - imgCount;
+  const box      = document.getElementById('img-box');
+  const addMore  = document.getElementById('add-more-wrap');
+  const pgCount  = document.getElementById('page-count');
   if (imgFiles.length) {
     box.classList.add('filled');
-    box.querySelector('p').innerHTML = `<strong>${imgFiles.length} photo${imgFiles.length>1?'s':''} loaded</strong><br><span style="font-size:.75rem">Click/drop to add more</span>`;
+    const parts = [];
+    if (imgCount) parts.push(`${imgCount} photo${imgCount>1?'s':''}`);
+    if (pdfCount) parts.push(`${pdfCount} PDF${pdfCount>1?'s':''}`);
+    document.getElementById('img-box-txt').innerHTML =
+      `<strong>✓ ${parts.join(' + ')} na-upload</strong><br><span style="font-size:.72rem;color:#2e7d32">Pwede dagdagan pa</span>`;
+    addMore.style.display = '';
+    pgCount.style.display = '';
+    const aiNote = imgCount ? ` (${imgCount} via AI, ${pdfCount} direct parse)` : ` (direct text parse — no AI tokens used)`;
+    pgCount.textContent = `📄 ${imgFiles.length} file${imgFiles.length>1?'s':''} ang i-process${pdfCount ? aiNote : ''}`;
   } else {
     box.classList.remove('filled');
-    box.querySelector('p').innerHTML = `<strong>Click here</strong> or drag &amp; drop<br>Pwede <strong>marami</strong> (Page 1, Page 2, etc.)`;
+    document.getElementById('img-box-txt').innerHTML =
+      `<strong>Click here</strong> o i-drag<br>JPEG / PNG photos <strong>o PDF</strong> — pwede marami`;
+    addMore.style.display = 'none';
+    pgCount.style.display = 'none';
   }
 }
 
-// ── Step 3: Extract via Google Gemini API (FREE) ──────────────────────────────
+// ── PDF text extractor & parser (no AI needed) ───────────────────────────────
+async function extractPdfRows(file, pageNum) {
+  if (!window.pdfjsLib) throw new Error('PDF.js hindi pa na-load. I-refresh ang page.');
+  const buf  = await fileToArrayBuffer(file);
+  const pdf  = await window.pdfjsLib.getDocument({ data: buf }).promise;
+  let fullText = '';
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page    = await pdf.getPage(p);
+    const content = await page.getTextContent();
+    fullText += content.items.map(i => i.str).join('\n') + '\n';
+  }
+  const rows = parsePdfAttendance(fullText, pageNum);
+  return { rows, pdf, textBased: rows.length > 0 };
+}
+
+// Render a PDF page to a JPEG base64 string (for scanned/image PDFs)
+async function pdfPageToJpeg(pdf, pageIndex, scale=2.0) {
+  const page     = await pdf.getPage(pageIndex);
+  const viewport = page.getViewport({ scale });
+  const canvas   = document.createElement('canvas');
+  canvas.width   = viewport.width;
+  canvas.height  = viewport.height;
+  const ctx      = canvas.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  // Apply contrast enhancement same as compressImage
+  const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d  = id.data;
+  const contrast = 1.35, intercept = 128*(1-contrast);
+  for (let i=0; i<d.length; i+=4) {
+    d[i]   = Math.min(255,Math.max(0, d[i]  *contrast+intercept));
+    d[i+1] = Math.min(255,Math.max(0, d[i+1]*contrast+intercept));
+    d[i+2] = Math.min(255,Math.max(0, d[i+2]*contrast+intercept));
+  }
+  ctx.putImageData(id, 0, 0);
+  return new Promise((res, rej) => {
+    canvas.toBlob(blob => {
+      if (!blob) { rej(new Error('Canvas toBlob failed')); return; }
+      const reader = new FileReader();
+      reader.onload = () => res(reader.result.split(',')[1]);
+      reader.onerror = rej;
+      reader.readAsDataURL(blob);
+    }, 'image/jpeg', 0.82);
+  });
+}
+
+function parsePdfAttendance(text, pageNum) {
+  const rows = [];
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  let branch = '';
+  let pending = '';
+
+  const BRANCH = /\b(SM|LCC|ROB(?:INSONS?)?|AYALA|EMALL|R\.?IMUS|TERMINAL\s+MARKET|BACOOR|SORSOGON|ROSARIO|TANZA|DAET|NAGA|LEGAZPI|ILOILO|BACOLOD|ROXAS|ANTIQUE|POLANGUI|TABACO)\b/i;
+  const ATT_ONLY   = /^(\d+)\s*(?:days?)?\s*[\/\\]\s*(\d+)/i;
+  // Inline: requires non-space separator (colon, equals, dash) OR digits clearly at end after space
+  const ATT_INLINE = /^(.+?)(?:[:=\-]\s*|(?<=\s))(\d+)\s*(?:days?)?\s*[\/\\]\s*(\d+)\s*(?:days?)?(?:\s*\(.*\))?\s*$/i;
+
+  for (const line of lines) {
+    // Skip header / meta lines
+    if (/^(good\s|attendance\s+for|month\s+of|\d+\s+employee|may\s+(1-|1–|\d+[-–]))/i.test(line)) {
+      pending = ''; continue;
+    }
+
+    // Branch header — check BEFORE inline attendance to avoid "SM NAGA 14/13" bug
+    if (BRANCH.test(line) && !ATT_ONLY.test(line)) {
+      // Only treat as branch if no explicit separator before the numbers
+      const hasExplicitSep = /[:=\-]\s*\d/.test(line);
+      if (!hasExplicitSep) {
+        branch = line.toUpperCase().trim();
+        pending = ''; continue;
+      }
+    }
+
+    // Standalone attendance line "14 / 13"
+    const attOnly = line.match(ATT_ONLY);
+    if (attOnly && pending) {
+      rows.push({ branch, name: pending.toUpperCase(), d1_15: +attOnly[1], d16_31: +attOnly[2], _page: pageNum });
+      pending = ''; continue;
+    }
+
+    // Inline attendance "NAME-13/14" or "NAME=13 days / 14 days" or "NAME: 13/14"
+    const inl = line.match(ATT_INLINE);
+    if (inl) {
+      const name = inl[1].replace(/[:=\-\s]+$/, '').trim();
+      if (name && !/^\d+$/.test(name)) {
+        rows.push({ branch, name: name.toUpperCase(), d1_15: +inl[2], d16_31: +inl[3], _page: pageNum });
+        pending = ''; continue;
+      }
+    }
+
+    // Probably a name (no digits, at least 2 words)
+    if (!/\d/.test(line) && line.split(/\s+/).length >= 2) {
+      pending = line;
+    } else {
+      pending = '';
+    }
+  }
+  return rows;
+}
+
+// ── Step 3: Extract via Groq API (images) or direct parse (PDFs) ─────────────
 async function doExtract() {
+  const hasPdfs  = imgFiles.some(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+  const hasImgs  = imgFiles.some(f => f.type.startsWith('image/'));
   const key = document.getElementById('api-key').value.trim();
-  if (!key) {
-    showStatus('I-enter muna ang iyong Google Gemini API key sa taas.','err');
+  if (hasImgs && !key) {
+    showStatus('I-enter muna ang iyong Groq API key sa taas. Kuhanin sa console.groq.com/keys (LIBRE). Para sa text-based PDF lang hindi kailangan ng key.', 'err');
     scrollToStatus(); return;
   }
   if (imgFiles.length === 0) return;
@@ -388,38 +516,117 @@ async function doExtract() {
   showProg(true); setStep(3);
   scrollToStatus();
 
+  // Groq free tier: 30,000 TPM, ~2,000-3,000 tokens per image after compression
+  // Safe pacing: 9s gap keeps token usage ~6,600/min, well under 30,000 TPM
+  const GAP_MS = 9000;
+  let reqThisMinute = 0, minuteStart = Date.now();
+
   const errors = [];
   for (let i = 0; i < imgFiles.length; i++) {
-    setProg(Math.round(((i+0.5)/imgFiles.length)*90), `Analyzing page ${i+1} of ${imgFiles.length}...`);
-    showStatus(`🔍 Analyzing page ${i+1} of ${imgFiles.length}... please wait.`, 'info');
+    const pct  = Math.round(((i+0.5)/imgFiles.length)*90);
+    const file = imgFiles[i];
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
 
-    // wait between pages to avoid Gemini free-tier rate limit (15 req/min)
-    if (i > 0) {
-      showStatus(`⏳ Waiting 5s before page ${i+1} (free tier limit)...`, 'info');
-      await new Promise(r => setTimeout(r, 5000));
+    // ── PDF: try text parse first; fall back to AI scan per page if scanned ───
+    if (isPdf) {
+      setProg(pct, `File ${i+1} / ${imgFiles.length} — parsing PDF...`);
+      showStatus(`📄 Parsing PDF ${i+1} of ${imgFiles.length}...`, 'info');
+      try {
+        const { rows, pdf, textBased } = await extractPdfRows(file, i+1);
+        if (textBased) {
+          // Text-based PDF — no AI needed
+          allRows = allRows.concat(rows);
+          showStatus(`✅ PDF parsed: ${rows.length} records (no AI tokens used)`, 'ok');
+        } else {
+          // Scanned / image PDF — render each page and send to Groq AI
+          if (!key) {
+            errors.push(`File ${i+1} (${file.name}): Scanned PDF — kailangan ng Groq API key para i-scan. I-save ang key sa taas.`);
+          } else {
+            showStatus(`📷 Scanned PDF detected — converting pages to images para sa AI...`, 'warn');
+            for (let pg = 1; pg <= pdf.numPages; pg++) {
+              if (reqThisMinute >= 28) {
+                const elapsed = Date.now() - minuteStart;
+                const wait = Math.max(0, 61000 - elapsed);
+                if (wait > 0) { await new Promise(r => setTimeout(r, wait)); }
+                reqThisMinute = 0; minuteStart = Date.now();
+              }
+              if (pg > 1) await new Promise(r => setTimeout(r, GAP_MS));
+              setProg(pct, `PDF ${i+1} — scanning page ${pg}/${pdf.numPages} via AI...`);
+              showStatus(`🔍 PDF page ${pg}/${pdf.numPages} — sending to AI...`, 'info');
+              try {
+                const b64  = await pdfPageToJpeg(pdf, pg);
+                const pgRows = await callGroq(key, b64, 'image/jpeg');
+                pgRows.forEach(r => { r._page = i+1; r._pdfPg = pg; });
+                allRows = allRows.concat(pgRows);
+                reqThisMinute++;
+              } catch(e) {
+                const isTPD = e.message.toLowerCase().includes('per day');
+                if (isTPD) {
+                  showStatus(`⛔ Daily token limit naubos. ${allRows.length} records na ang na-extract.`, 'err');
+                  errors.push(`Daily limit reached`); break;
+                }
+                errors.push(`PDF ${i+1} page ${pg}: ${e.message}`);
+              }
+            }
+          }
+        }
+      } catch(e) {
+        errors.push(`File ${i+1} (${file.name}): ${e.message}`);
+      }
+      continue; // skip the image Groq path below
     }
 
+    // ── Image: send to Groq AI ────────────────────────────────────────────────
+    setProg(pct, `Page ${i+1} / ${imgFiles.length} — compressing...`);
+    showStatus(`🔍 Page ${i+1} of ${imgFiles.length} — analyzing...`, 'info');
+
+    // Rate-limit guard: if 28 requests in current minute, wait for next minute
+    if (reqThisMinute >= 28) {
+      const elapsed = Date.now() - minuteStart;
+      const wait = Math.max(0, 61000 - elapsed);
+      if (wait > 0) {
+        showStatus(`⏳ 28 requests sent — naghihintay ng ${Math.ceil(wait/1000)}s para sa rate limit...`, 'warn');
+        await new Promise(r => setTimeout(r, wait));
+      }
+      reqThisMinute = 0; minuteStart = Date.now();
+    }
+
+    // Small gap between consecutive requests
+    if (i > 0) await new Promise(r => setTimeout(r, GAP_MS));
+
+    const tryExtract = async () => {
+      setProg(pct, `Page ${i+1} / ${imgFiles.length} — enhancing image...`);
+      const { b64, mime, sizekb } = await compressImage(imgFiles[i]);
+      console.log(`Page ${i+1}: ${sizekb}KB after compression`);
+      setProg(pct, `Page ${i+1} / ${imgFiles.length} — scanning...`);
+      showStatus(`🔍 Page ${i+1} of ${imgFiles.length} — scanning (may deep-scan kung kaunti ang nakita)...`, 'info');
+      const rows = await callGroq(key, b64, mime);
+      reqThisMinute++;
+      return rows;
+    };
+
     try {
-      const b64      = await fileToBase64(imgFiles[i]);
-      const mime     = imgFiles[i].type;
-      const provider = document.getElementById('api-provider').value;
-      const rows     = provider === 'groq'
-        ? await callGroq(key, b64, mime)
-        : await callGemini(key, b64, mime);
+      const rows = await tryExtract();
       rows.forEach(r => { r._page = i+1; });
       allRows = allRows.concat(rows);
     } catch(e) {
       console.error('Page '+(i+1)+' error:', e);
-      // if rate limited, wait longer and retry once
-      if (e.message.includes('429') || e.message.toLowerCase().includes('quota') || e.message.includes('rate_limit')) {
-        showStatus(`⏳ Rate limit hit — waiting 65s then retrying page ${i+1}...`, 'warn');
-        await new Promise(r => setTimeout(r, 65000));
+      const isTPD   = e.message.toLowerCase().includes('per day') || e.message.toLowerCase().includes('tpd');
+      const isQuota = !isTPD && (e.message.includes('429') || e.message.toLowerCase().includes('rate limit') || e.message.includes('rate_limit') || e.message.toLowerCase().includes('too many'));
+      if (isTPD) {
+        // Daily token limit exhausted — no point retrying, stop loop and show what we have
+        showStatus(`⛔ Groq daily token limit (500,000/day) naubos na. Bukas mag-re-reset. Ipapakita ang ${allRows.length} records mula sa ${i} page(s) na na-process.`, 'err');
+        errors.push(`Page ${i+1}–${imgFiles.length}: Daily limit reached — resume tomorrow`);
+        break; // stop processing remaining pages
+      } else if (isQuota) {
+        // Parse retry time from Groq error: "Please try again in 12.5s"
+        const retryMatch = e.message.match(/try again in ([\d.]+)s/i);
+        const retrySec = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) + 3 : 65;
+        showStatus(`⏳ Rate limit (TPM) — naghihintay ng ${retrySec}s bago i-retry ang page ${i+1}...`, 'warn');
+        await new Promise(r => setTimeout(r, retrySec * 1000));
+        reqThisMinute = 0; minuteStart = Date.now();
         try {
-          const b64      = await fileToBase64(imgFiles[i]);
-          const provider = document.getElementById('api-provider').value;
-          const rows     = provider === 'groq'
-            ? await callGroq(key, b64, mime)
-            : await callGemini(key, b64, mime);
+          const rows = await tryExtract();
           rows.forEach(r => { r._page = i+1; });
           allRows = allRows.concat(rows);
         } catch(e2) {
@@ -435,11 +642,14 @@ async function doExtract() {
   setTimeout(() => showProg(false), 800);
   btn.disabled=false; btn.innerHTML='🤖 Re-Extract';
 
+  const hitDailyLimit = errors.some(e => e.includes('Daily limit reached'));
+
   if (allRows.length === 0) {
-    const errMsg = errors.length
-      ? 'Error:\n' + errors.join('\n')
-      : 'Walang na-extract. Subukan mo ulit.';
-    showStatus('❌ ' + errMsg, 'err');
+    if (hitDailyLimit) {
+      showStatus('⛔ Groq daily token limit naubos (500,000/day). Walang nai-process. Bukas mag-re-reset ang limit ng 12MN UTC (8AM PH time). Pwede ring gumawa ng bagong Groq account para sa additional 500,000 tokens.', 'err');
+    } else {
+      showStatus('❌ ' + (errors.length ? errors.join(' | ') : 'Walang na-extract. Subukan mo ulit.'), 'err');
+    }
     scrollToStatus();
     return;
   }
@@ -456,92 +666,49 @@ async function doExtract() {
   document.getElementById('float-save').style.display = '';
 }
 
-async function callGemini(apiKey, imgBase64, mimeType) {
-  const prompt = `You are an expert at reading Philippine retail store attendance sheets.
-Extract ALL employee records from this attendance photo.
+function buildPrompt(deep=false) {
+  const base = `You are an expert OCR system specialized in Philippine retail store attendance sheets.
+Your job: extract EVERY employee row from this image — do NOT skip anyone.
 
-Return ONLY valid JSON — no markdown, no explanation, no extra text:
-{"rows":[{"branch":"branch name","name":"FULL NAME UPPERCASE","d1_15":13,"d16_31":14}]}
+The sheet typically looks like:
+- Header row with branch/store name at the top
+- Rows of employees, each with: full name | attendance days 1-15 | attendance days 16-31
+- Numbers in the attendance columns may be handwritten or printed
+- Names are in UPPERCASE (Last Name, First Name or First Last format)
+- Some cells may be blurry, tilted, or partially cut off — do your best to read them
 
-Rules:
-- branch: copy exactly as shown in the sheet
-- name: UPPERCASE full name as written
-- d1_15: the number in the first attendance column (days 1-15). Use null if blank.
-- d16_31: the number in the second attendance column (days 16-31). Use null if blank.
-- Include every single person listed, do not skip anyone
-- Ignore empty/blank rows
-- Return ONLY the JSON object, nothing else`;
+Return ONLY this JSON (no markdown, no explanation):
+{"rows":[{"branch":"BRANCH NAME","name":"FULL NAME UPPERCASE","d1_15":13,"d16_31":14}]}
 
-  const body = {
-    contents: [{
-      parts: [
-        { inline_data: { mime_type: mimeType, data: imgBase64 } },
-        { text: prompt }
-      ]
-    }],
-    generationConfig: { temperature: 0, maxOutputTokens: 8192 }
-  };
+Field rules:
+- branch: the store/branch name from the header (same for all rows on this page)
+- name: full name EXACTLY as written, UPPERCASE
+- d1_15: integer days present for 1st half of month; null if blank or unreadable
+- d16_31: integer days present for 2nd half of month; null if blank or unreadable
+- INCLUDE every row with a name — even if attendance columns are empty/null
+- Do NOT include column headers or blank rows`;
 
-  const resp = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-    { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
-  );
+  if (!deep) return base;
 
-  if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(err.error?.message || `API error ${resp.status}`);
-  }
+  return base + `
 
-  const data = await resp.json();
-
-  // check for blocked/safety response
-  const candidate = data.candidates?.[0];
-  if (!candidate) throw new Error('No response from Gemini. Check your API key.');
-  if (candidate.finishReason === 'SAFETY') throw new Error('Blocked by safety filter.');
-
-  let raw = (candidate.content?.parts?.[0]?.text || '').trim();
-  if (!raw) throw new Error('Empty response from Gemini.');
-
-  // strip markdown fences if any
-  raw = raw.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/i,'');
-
-  // extract JSON object from response (in case there's surrounding text)
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('No JSON found in response: ' + raw.slice(0,120));
-
-  let parsed;
-  try {
-    parsed = JSON.parse(jsonMatch[0]);
-  } catch(e) {
-    throw new Error('JSON parse error: ' + e.message + ' | Raw: ' + raw.slice(0,120));
-  }
-
-  return parsed.rows || [];
+DEEP SCAN MODE — this image was hard to read on first pass:
+- Scan the ENTIRE image top to bottom, row by row
+- Include rows even if the name is partially visible or cut off at the edge
+- If a number is ambiguous (e.g. 1 vs 7, 0 vs 8), make your best guess
+- Look for names in the LEFT-most text column — they may be indented or aligned differently
+- Do not stop early — extract until the last row of the sheet
+- If the sheet has multiple sections or departments, include ALL of them`;
 }
 
-async function callGroq(apiKey, imgBase64, mimeType) {
-  const prompt = `You are an expert at reading Philippine retail store attendance sheets.
-Extract ALL employee records from this attendance photo.
-
-Return ONLY valid JSON — no markdown, no explanation, no extra text:
-{"rows":[{"branch":"branch name","name":"FULL NAME UPPERCASE","d1_15":13,"d16_31":14}]}
-
-Rules:
-- branch: copy exactly as shown in the sheet
-- name: UPPERCASE full name as written
-- d1_15: number in first attendance column (days 1-15). Use null if blank.
-- d16_31: number in second attendance column (days 16-31). Use null if blank.
-- Include every single person, do not skip anyone
-- Ignore empty/blank rows
-- Return ONLY the JSON object, nothing else`;
-
+async function callGroqRaw(apiKey, imgBase64, mimeType, deep=false) {
   const body = {
     model: 'meta-llama/llama-4-scout-17b-16e-instruct',
     messages: [{
       role: 'user',
       content: [
-        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imgBase64}` } },
-        { type: 'text', text: prompt }
+        { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imgBase64}`, detail: 'high' } },
+        { type: 'text', text: buildPrompt(deep) }
       ]
     }],
     temperature: 0,
@@ -563,16 +730,28 @@ Rules:
   const data = await resp.json();
   let raw = (data.choices?.[0]?.message?.content || '').trim();
   if (!raw) throw new Error('Empty response from Groq.');
-
   raw = raw.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/i,'');
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error('No JSON found in response: ' + raw.slice(0,120));
-
   let parsed;
   try { parsed = JSON.parse(jsonMatch[0]); }
   catch(e) { throw new Error('JSON parse error: ' + e.message + ' | Raw: ' + raw.slice(0,120)); }
-
   return parsed.rows || [];
+}
+
+async function callGroq(apiKey, imgBase64, mimeType) {
+  // First pass — normal
+  const rows = await callGroqRaw(apiKey, imgBase64, mimeType, false);
+
+  // If suspiciously few rows (≤2), do a deep-scan retry with enhanced prompt
+  if (rows.length <= 2) {
+    console.warn(`Only ${rows.length} rows on first pass — retrying with deep scan...`);
+    const deepRows = await callGroqRaw(apiKey, imgBase64, mimeType, true);
+    // Return whichever pass got more rows
+    return deepRows.length > rows.length ? deepRows : rows;
+  }
+
+  return rows;
 }
 
 // ── Render results table ───────────────────────────────────────────────────────
@@ -635,27 +814,37 @@ async function doSave() {
       if (rn < 3) return;
       const last   = cellStr(row.getCell(1));
       const first  = cellStr(row.getCell(2));
+      const middle = cellStr(row.getCell(3));
       const branch = cellStr(row.getCell(4));
-      if (last) emps.push({ rn, last, first, branch });
+      if (last) emps.push({ rn, last, first, middle, branch });
     });
 
     const unmatched = [];
     let matchedCount = 0;
 
     allRows.forEach((rec, i) => {
-      const hit = matchEmployee(rec, emps);
-      if (hit) {
+      const result = matchEmployee(rec, emps);
+      if (result) {
+        const { emp: hit, score } = result;
         const row = ws.getRow(hit.rn);
         const v1  = rec.d1_15  !== '' && rec.d1_15  != null ? Number(rec.d1_15)  : NaN;
         const v2  = rec.d16_31 !== '' && rec.d16_31 != null ? Number(rec.d16_31) : NaN;
-        if (!isNaN(v1) && isFinite(v1)) { row.getCell(5).value = v1; styleC(row.getCell(5)); }
-        if (!isNaN(v2) && isFinite(v2)) { row.getCell(6).value = v2; styleC(row.getCell(6)); }
-        row.commit();
+        let wrote = false;
+        if (!isNaN(v1) && isFinite(v1)) { row.getCell(5).value = v1; styleC(row.getCell(5)); wrote=true; }
+        else { clearC(row.getCell(5)); } // remove pre-existing blue from empty cell
+        if (!isNaN(v2) && isFinite(v2)) { row.getCell(6).value = v2; styleC(row.getCell(6)); wrote=true; }
+        else { clearC(row.getCell(6)); } // remove pre-existing blue from empty cell
+        if (wrote) row.commit();
         rec._matched   = true;
         rec._masterRow = hit.rn;
+        rec._matchName = `${hit.last}, ${hit.first}`;
         matchedCount++;
+        const pct = Math.round(score*100);
         const tag = document.getElementById('tag'+i);
-        tag.className='tag t-ok'; tag.textContent='✓ Row '+hit.rn;
+        // yellow warning if fuzzy match (< 90%)
+        tag.className = 'tag ' + (pct >= 90 ? 't-ok' : 't-fuzzy');
+        tag.title = `Masterlist: ${hit.last}, ${hit.first} | ${hit.branch}`;
+        tag.textContent = `✓ Row ${hit.rn} (${pct}%)`;
       } else {
         rec._matched = false;
         unmatched.push({ name: rec.name, branch: rec.branch });
@@ -702,34 +891,100 @@ async function doSave() {
 // ── Name / branch matching ─────────────────────────────────────────────────────
 function norm(s) {
   return (s||'').toLowerCase()
-    .replace(/[^a-z0-9 ]/g,'')
-    .replace(/\bjr?\b\.?/g,'')
+    .replace(/[^a-z0-9 ]/g,' ')
+    .replace(/\bjr?\.?\b/g,'')
     .replace(/\s+/g,' ').trim();
 }
-function branchScore(a, b) {
-  const na=norm(a), nb=norm(b);
-  if (na===nb) return 1;
-  if (na.includes(nb)||nb.includes(na)) return .9;
-  const ta=new Set(na.split(' ')), tb=new Set(nb.split(' '));
-  const ix=[...ta].filter(t=>tb.has(t)).length;
-  return ix/Math.max(ta.size,tb.size);
+function normBranch(s) {
+  return (s||'').toLowerCase()
+    .replace(/\b(branch|store|mall|center|centre|bldg|building|floor|flr|level|lvl|inc|corp|ph)\b/g,'')
+    .replace(/[^a-z0-9 ]/g,' ')
+    .replace(/\s+/g,' ').trim();
 }
+
+// Levenshtein edit distance
+function editDist(a, b) {
+  const m=a.length, n=b.length;
+  const dp=[];
+  for (let i=0;i<=m;i++) { dp[i]=[i]; }
+  for (let j=0;j<=n;j++) { dp[0][j]=j; }
+  for (let i=1;i<=m;i++) for (let j=1;j<=n;j++)
+    dp[i][j]=a[i-1]===b[j-1]?dp[i-1][j-1]:1+Math.min(dp[i-1][j],dp[i][j-1],dp[i-1][j-1]);
+  return dp[m][n];
+}
+
+// Character-level similarity 0–1
+function strSim(a, b) {
+  if (!a||!b) return 0;
+  if (a===b) return 1;
+  if (a.includes(b)||b.includes(a)) return 0.92;
+  const d = editDist(a, b);
+  return Math.max(0, 1 - d / Math.max(a.length, b.length, 1));
+}
+
+// Best similarity of one word against a list of words
+function bestWordSim(word, words) {
+  if (!words.length) return 0;
+  return Math.max(...words.map(w => strSim(word, w)));
+}
+
+function branchScore(a, b) {
+  const na = normBranch(a), nb = normBranch(b);
+  if (!na || !nb) return 0.35; // unknown branch — partial credit
+  if (na === nb) return 1;
+  if (na.includes(nb) || nb.includes(na)) return 0.92;
+  const wa = na.split(' ').filter(w=>w.length>1);
+  const wb = nb.split(' ').filter(w=>w.length>1);
+  if (!wa.length || !wb.length) return strSim(na, nb);
+  // each word in wa finds best fuzzy match in wb
+  let total = 0;
+  for (const w of wa) total += bestWordSim(w, wb);
+  return total / Math.max(wa.length, wb.length);
+}
+
 function matchEmployee(rec, emps) {
   const fn = norm(rec.name||'');
-  const fw = fn.split(' ').filter(Boolean);
-  if (!fw.length) return null;
+  const nameWords = fn.split(' ').filter(Boolean);
+  if (!nameWords.length) return null;
+
   let best=null, bestS=0;
   for (const e of emps) {
-    const ln=norm(e.last);
+    const ln = norm(e.last);
     if (!ln) continue;
-    if (!fw.includes(ln) && !fn.includes(ln)) continue;
-    const firstW = norm(e.first).split(' ').filter(Boolean);
-    const fmatch = firstW.some(w=>fn.includes(w)) ? 1 : 0;
+
+    // ── Last name similarity ──────────────────────────────────────────────────
+    // Try every word in the extracted name against the masterlist last name
+    const lastSim = Math.max(...nameWords.map(w => strSim(w, ln)));
+    // Also try full extracted name vs last name (handles "DELA CRUZ" type last names)
+    const fullVsLast = strSim(fn, ln);
+    const bestLast = Math.max(lastSim, fullVsLast);
+
+    // Last name must be at least 65% similar (handles 1–2 character OCR typos)
+    if (bestLast < 0.65) continue;
+
+    // ── First + middle name similarity ───────────────────────────────────────
+    // Combine first + middle into one pool so "LANILYN I." matches "Lanilyn Ignacio"
+    const firstWords  = norm(e.first ).split(' ').filter(Boolean);
+    const middleWords = norm(e.middle||'').split(' ').filter(Boolean);
+    const givenWords  = [...firstWords, ...middleWords];
+    let firstSim = 0;
+    if (givenWords.length) {
+      firstSim = Math.max(...givenWords.map(gw => bestWordSim(gw, nameWords)));
+    }
+
+    // ── Branch similarity ─────────────────────────────────────────────────────
     const bs = branchScore(rec.branch||'', e.branch);
-    const sc = (1+fmatch)*(0.5+bs);
-    if (sc>bestS) { bestS=sc; best=e; }
+
+    // ── Combined score ────────────────────────────────────────────────────────
+    // When multiple employees share the same last name, first name must be decisive.
+    // Boost first name weight to ×3 (equal to last name) so "BALANE, LANILYN"
+    // cannot accidentally match "BALANE, JESUSITO".
+    const sc = (bestLast*3 + firstSim*3 + bs*1.5) / 7.5;
+
+    if (sc > bestS) { bestS=sc; best=e; }
   }
-  return bestS>=0.8 ? best : null;
+  // Threshold 0.60 — accepts moderate fuzzy matches
+  return bestS >= 0.60 ? { emp: best, score: bestS } : null;
 }
 
 // ── Util ───────────────────────────────────────────────────────────────────────
@@ -738,6 +993,74 @@ function styleC(cell) {
   cell.font={ bold:true };
   cell.alignment={ horizontal:'center',vertical:'middle' };
 }
+function clearC(cell) {
+  cell.fill={ type:'pattern',pattern:'none' };
+  cell.font={};
+  cell.value=null;
+}
+
+// Compress + enhance image before sending to AI
+// enhance=true: boost contrast & sharpen for hard-to-read sheets
+function compressImage(file, maxPx=1000, quality=0.72, enhance=true) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let {width:w, height:h} = img;
+      if (w > maxPx || h > maxPx) {
+        if (w > h) { h = Math.round(h * maxPx/w); w = maxPx; }
+        else       { w = Math.round(w * maxPx/h); h = maxPx; }
+      }
+      const c = document.createElement('canvas');
+      c.width=w; c.height=h;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+
+      if (enhance) {
+        // Boost contrast + slight sharpening for attendance sheets
+        const id = ctx.getImageData(0, 0, w, h);
+        const d  = id.data;
+        const contrast = 1.35, intercept = 128*(1-contrast);
+        for (let i=0; i<d.length; i+=4) {
+          // contrast
+          d[i]   = Math.min(255,Math.max(0, d[i]  *contrast+intercept));
+          d[i+1] = Math.min(255,Math.max(0, d[i+1]*contrast+intercept));
+          d[i+2] = Math.min(255,Math.max(0, d[i+2]*contrast+intercept));
+        }
+        ctx.putImageData(id, 0, 0);
+        // Sharpen via unsharp-mask approximation (blur then subtract)
+        ctx.filter = 'blur(0.5px)';
+        const tmp = document.createElement('canvas');
+        tmp.width=w; tmp.height=h;
+        const tctx = tmp.getContext('2d');
+        tctx.drawImage(c, 0, 0);
+        ctx.filter = 'none';
+        // overlay with hard light to sharpen edges
+        ctx.globalCompositeOperation = 'hard-light';
+        ctx.globalAlpha = 0.12;
+        ctx.drawImage(tmp, 0, 0);
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.globalAlpha = 1;
+      }
+
+      c.toBlob(blob => {
+        if (!blob) { rej(new Error('Canvas compression failed')); return; }
+        const reader = new FileReader();
+        reader.onload = () => res({
+          b64: reader.result.split(',')[1],
+          mime: 'image/jpeg',
+          sizekb: Math.round(blob.size/1024)
+        });
+        reader.onerror = rej;
+        reader.readAsDataURL(blob);
+      }, 'image/jpeg', quality);
+    };
+    img.onerror = rej;
+    img.src = url;
+  });
+}
+
 function fileToBase64(file) {
   return new Promise((res,rej) => {
     const r = new FileReader();
