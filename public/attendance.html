@@ -819,13 +819,21 @@ async function doSave() {
       if (last) emps.push({ rn, last, first, middle, branch });
     });
 
+    // Remove conditional formatting rules (source of persistent template blue)
+    try { ws.conditionalFormattings = []; } catch(e){}
+
     // Remove ALL formatting from columns E and F entirely
     [5,6].forEach(ci => {
       try { ws.getColumn(ci).style = {}; } catch(e){}
-      ws.getColumn(ci).eachCell({ includeEmpty: true }, cell => {
+    });
+    ws.eachRow((row, rn) => {
+      if (rn < 2) return;
+      [5,6].forEach(ci => {
+        const cell = row.getCell(ci);
         cell.style = {};
-        cell.value = null;
+        if (rn >= 3) cell.value = null;
       });
+      row.commit();
     });
 
     const unmatched = [];
