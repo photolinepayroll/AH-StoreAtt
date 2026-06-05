@@ -1002,9 +1002,9 @@ function styleC(cell) {
   cell.alignment={ horizontal:'center',vertical:'middle' };
 }
 function clearC(cell) {
-  cell.fill = undefined;
-  cell.font = undefined;
-  cell.value=null;
+  cell.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFFFFF' } };
+  cell.font = { bold:false, color:{ argb:'FF000000' } };
+  cell.value = null;
 }
 
 // Compress + enhance image before sending to AI
