@@ -451,49 +451,73 @@ function parsePdfAttendance(text, pageNum) {
   let branch = '';
   let pending = '';
 
-  const BRANCH = /\b(SM|LCC|ROB(?:INSONS?)?|AYALA|EMALL|R\.?IMUS|TERMINAL\s+MARKET|BACOOR|SORSOGON|ROSARIO|TANZA|DAET|NAGA|LEGAZPI|ILOILO|BACOLOD|ROXAS|ANTIQUE|POLANGUI|TABACO)\b/i;
-  const ATT_ONLY   = /^(\d+)\s*(?:days?)?\s*[\/\\]\s*(\d+)/i;
-  // Inline: requires non-space separator (colon, equals, dash) OR digits clearly at end after space
-  const ATT_INLINE = /^(.+?)(?:[:=\-]\s*|(?<=\s))(\d+)\s*(?:days?)?\s*[\/\\]\s*(\d+)\s*(?:days?)?(?:\s*\(.*\))?\s*$/i;
+  const BRANCH = /\b(SM|LCC|ROB(?:INSONS?)?|AYALA|EMALL|R\.?IMUS|TERMINAL\s+MARKET|BACOOR|SORSOGON|ROSARIO|TANZA|DAET|NAGA|LEGAZPI|ILOILO|BACOLOD|ROXAS|ANTIQUE|POLANGUI|TABACO|HEAD\s+OFFICE)\b/i;
+  // Matches standalone number or decimal: "13" or "13.00"
+  const NUM_ONLY = /^(\d+(?:\.\d+)?)$/;
+  // Matches "14 / 13" or "14.00  13.00" (two nums, slash optional)
+  const ATT_ONLY = /^(\d+(?:\.\d+)?)\s*(?:days?)?\s*[\/\\]?\s*(\d+(?:\.\d+)?)/i;
+  // Inline: NAME then two numbers at end, slash optional, decimals ok
+  const ATT_INLINE = /^(.+?)\s+(\d+(?:\.\d+)?)\s*(?:days?)?\s*[\/\\]?\s*(\d+(?:\.\d+)?)\s*(?:days?)?(?:\s*\(.*\))?\s*$/i;
+
+  // pending2: second number when table splits onto multiple lines
+  let pending2 = null;
 
   for (const line of lines) {
-    // Skip header / meta lines
-    if (/^(good\s|attendance\s+for|month\s+of|\d+\s+employee|may\s+(1-|1–|\d+[-–]))/i.test(line)) {
-      pending = ''; continue;
+    // Skip header / meta / column-header lines
+    if (/^(good\s|attendance\s+for|month\s+of|\d+\s+employee|surname|days|may\s+\d|1[-–]\d|16[-–]\d)/i.test(line)) {
+      pending = ''; pending2 = null; continue;
     }
 
-    // Branch header — check BEFORE inline attendance to avoid "SM NAGA 14/13" bug
+    // Branch header — check BEFORE inline to avoid "SM NAGA 14/13" bug
     if (BRANCH.test(line) && !ATT_ONLY.test(line)) {
-      // Only treat as branch if no explicit separator before the numbers
       const hasExplicitSep = /[:=\-]\s*\d/.test(line);
       if (!hasExplicitSep) {
-        branch = line.toUpperCase().trim();
-        pending = ''; continue;
+        branch = line.replace(/\s*\(.*?\)\s*/g,' ').toUpperCase().trim();
+        pending = ''; pending2 = null; continue;
       }
     }
 
-    // Standalone attendance line "14 / 13"
+    // Table format: lone decimal/integer — first number is d1_15, second is d16_31
+    const numOnly = line.match(NUM_ONLY);
+    if (numOnly && pending) {
+      if (pending2 === null) {
+        pending2 = +numOnly[1]; // first number seen after name
+        continue;
+      } else {
+        // second number — emit row
+        rows.push({ branch, name: pending.toUpperCase(), d1_15: pending2, d16_31: +numOnly[1], _page: pageNum });
+        pending = ''; pending2 = null; continue;
+      }
+    }
+
+    // Standalone "14 / 13" or "14.00 / 13.00"
     const attOnly = line.match(ATT_ONLY);
     if (attOnly && pending) {
       rows.push({ branch, name: pending.toUpperCase(), d1_15: +attOnly[1], d16_31: +attOnly[2], _page: pageNum });
-      pending = ''; continue;
+      pending = ''; pending2 = null; continue;
     }
 
-    // Inline attendance "NAME-13/14" or "NAME=13 days / 14 days" or "NAME: 13/14"
+    // Inline "NAME 13 14" or "NAME: 13/14" or "NAME 13.00 14.00"
     const inl = line.match(ATT_INLINE);
     if (inl) {
       const name = inl[1].replace(/[:=\-\s]+$/, '').trim();
-      if (name && !/^\d+$/.test(name)) {
+      if (name && !/^\d/.test(name)) {
         rows.push({ branch, name: name.toUpperCase(), d1_15: +inl[2], d16_31: +inl[3], _page: pageNum });
-        pending = ''; continue;
+        pending = ''; pending2 = null; continue;
       }
     }
 
-    // Probably a name (no digits, at least 2 words)
-    if (!/\d/.test(line) && line.split(/\s+/).length >= 2) {
-      pending = line;
-    } else {
-      pending = '';
+    // If we have a pending name and hit a new name-looking line, flush pending2 as partial
+    if (pending && pending2 !== null && !/\d/.test(line) && line.split(/\s+/).length >= 2) {
+      rows.push({ branch, name: pending.toUpperCase(), d1_15: pending2, d16_31: null, _page: pageNum });
+      pending = line; pending2 = null; continue;
+    }
+
+    // Probably a name line (no digits or only dots, at least 2 words or has comma)
+    if (!/\d/.test(line) && (line.split(/\s+/).length >= 2 || line.includes(','))) {
+      pending = line; pending2 = null;
+    } else if (line.length > 1 && !/^\W+$/.test(line)) {
+      // ignore
     }
   }
   return rows;
