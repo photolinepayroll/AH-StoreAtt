@@ -819,6 +819,14 @@ async function doSave() {
       if (last) emps.push({ rn, last, first, middle, branch });
     });
 
+    // Pre-clear ALL masterlist rows so template blue doesn't bleed through
+    emps.forEach(({ rn }) => {
+      const row = ws.getRow(rn);
+      clearC(row.getCell(5));
+      clearC(row.getCell(6));
+      row.commit();
+    });
+
     const unmatched = [];
     let matchedCount = 0;
 
