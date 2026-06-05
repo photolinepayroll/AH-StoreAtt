@@ -620,7 +620,13 @@ async function doExtract() {
 
     const tryExtract = async () => {
       setProg(pct, `Page ${i+1} / ${imgFiles.length} — enhancing image...`);
-      const { b64, mime, sizekb } = await compressImage(imgFiles[i]);
+      // Tall portrait sheets (like formatted attendance reports) need higher resolution
+      const _tmpUrl = URL.createObjectURL(imgFiles[i]);
+      const _tmpImg = await new Promise(r => { const x=new Image(); x.onload=()=>r(x); x.src=_tmpUrl; });
+      URL.revokeObjectURL(_tmpUrl);
+      const _aspect = _tmpImg.naturalHeight / (_tmpImg.naturalWidth || 1);
+      const _maxPx  = _aspect > 1.5 ? 1800 : 1000; // tall sheet → higher res
+      const { b64, mime, sizekb } = await compressImage(imgFiles[i], _maxPx);
       console.log(`Page ${i+1}: ${sizekb}KB after compression`);
       setProg(pct, `Page ${i+1} / ${imgFiles.length} — scanning...`);
       showStatus(`🔍 Page ${i+1} of ${imgFiles.length} — scanning (may deep-scan kung kaunti ang nakita)...`, 'info');
