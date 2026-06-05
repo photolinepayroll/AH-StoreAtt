@@ -411,7 +411,38 @@ async function extractPdfRows(file, pageNum) {
     const content = await page.getTextContent();
     fullText += content.items.map(i => i.str).join('\n') + '\n';
   }
-  return parsePdfAttendance(fullText, pageNum);
+  const rows = parsePdfAttendance(fullText, pageNum);
+  return { rows, pdf, textBased: rows.length > 0 };
+}
+
+// Render a PDF page to a JPEG base64 string (for scanned/image PDFs)
+async function pdfPageToJpeg(pdf, pageIndex, scale=2.0) {
+  const page     = await pdf.getPage(pageIndex);
+  const viewport = page.getViewport({ scale });
+  const canvas   = document.createElement('canvas');
+  canvas.width   = viewport.width;
+  canvas.height  = viewport.height;
+  const ctx      = canvas.getContext('2d');
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  // Apply contrast enhancement same as compressImage
+  const id = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d  = id.data;
+  const contrast = 1.35, intercept = 128*(1-contrast);
+  for (let i=0; i<d.length; i+=4) {
+    d[i]   = Math.min(255,Math.max(0, d[i]  *contrast+intercept));
+    d[i+1] = Math.min(255,Math.max(0, d[i+1]*contrast+intercept));
+    d[i+2] = Math.min(255,Math.max(0, d[i+2]*contrast+intercept));
+  }
+  ctx.putImageData(id, 0, 0);
+  return new Promise((res, rej) => {
+    canvas.toBlob(blob => {
+      if (!blob) { rej(new Error('Canvas toBlob failed')); return; }
+      const reader = new FileReader();
+      reader.onload = () => res(reader.result.split(',')[1]);
+      reader.onerror = rej;
+      reader.readAsDataURL(blob);
+    }, 'image/jpeg', 0.82);
+  });
 }
 
 function parsePdfAttendance(text, pageNum) {
@@ -420,16 +451,25 @@ function parsePdfAttendance(text, pageNum) {
   let branch = '';
   let pending = '';
 
-  // Patterns
-  const SKIP   = /^(good\s|attendance\s+for|month\s+of|\d+\s+employee|may\s+1[-–]\d|may\s*\d+[-–]|\d+[-–]\d+\s*$/i.test.bind(/^(good\s|attendance\s+for|month\s+of|\d+\s+employee|may\s+1[-–]\d|may\s*\d+[-–])/i));
   const BRANCH = /\b(SM|LCC|ROB(?:INSONS?)?|AYALA|EMALL|R\.?IMUS|TERMINAL\s+MARKET|BACOOR|SORSOGON|ROSARIO|TANZA|DAET|NAGA|LEGAZPI|ILOILO|BACOLOD|ROXAS|ANTIQUE|POLANGUI|TABACO)\b/i;
   const ATT_ONLY   = /^(\d+)\s*(?:days?)?\s*[\/\\]\s*(\d+)/i;
-  const ATT_INLINE = /^(.+?)[\s:=\-]+(\d+)\s*(?:days?)?\s*[\/\\]\s*(\d+)\s*(?:days?)?(?:\s*\(.*\))?\s*$/i;
+  // Inline: requires non-space separator (colon, equals, dash) OR digits clearly at end after space
+  const ATT_INLINE = /^(.+?)(?:[:=\-]\s*|(?<=\s))(\d+)\s*(?:days?)?\s*[\/\\]\s*(\d+)\s*(?:days?)?(?:\s*\(.*\))?\s*$/i;
 
   for (const line of lines) {
     // Skip header / meta lines
     if (/^(good\s|attendance\s+for|month\s+of|\d+\s+employee|may\s+(1-|1–|\d+[-–]))/i.test(line)) {
       pending = ''; continue;
+    }
+
+    // Branch header — check BEFORE inline attendance to avoid "SM NAGA 14/13" bug
+    if (BRANCH.test(line) && !ATT_ONLY.test(line)) {
+      // Only treat as branch if no explicit separator before the numbers
+      const hasExplicitSep = /[:=\-]\s*\d/.test(line);
+      if (!hasExplicitSep) {
+        branch = line.toUpperCase().trim();
+        pending = ''; continue;
+      }
     }
 
     // Standalone attendance line "14 / 13"
@@ -442,20 +482,11 @@ function parsePdfAttendance(text, pageNum) {
     // Inline attendance "NAME-13/14" or "NAME=13 days / 14 days" or "NAME: 13/14"
     const inl = line.match(ATT_INLINE);
     if (inl) {
-      const name = inl[1].replace(/[\-:=\s]+$/, '').trim();
-      if (name && !/^\d+$/.test(name) && name.split(' ').length >= 1) {
-        // Could be a branch line that happens to have numbers — skip if branch keyword
-        if (!BRANCH.test(name) || name.split(' ').length > 3) {
-          rows.push({ branch, name: name.toUpperCase(), d1_15: +inl[2], d16_31: +inl[3], _page: pageNum });
-          pending = ''; continue;
-        }
+      const name = inl[1].replace(/[:=\-\s]+$/, '').trim();
+      if (name && !/^\d+$/.test(name)) {
+        rows.push({ branch, name: name.toUpperCase(), d1_15: +inl[2], d16_31: +inl[3], _page: pageNum });
+        pending = ''; continue;
       }
-    }
-
-    // Branch header
-    if (BRANCH.test(line) && !ATT_ONLY.test(line) && !inl) {
-      branch = line.toUpperCase().trim();
-      pending = ''; continue;
     }
 
     // Probably a name (no digits, at least 2 words)
@@ -474,7 +505,7 @@ async function doExtract() {
   const hasImgs  = imgFiles.some(f => f.type.startsWith('image/'));
   const key = document.getElementById('api-key').value.trim();
   if (hasImgs && !key) {
-    showStatus('I-enter muna ang iyong Groq API key sa taas. Kuhanin sa console.groq.com/keys (LIBRE). (Para sa PDF lang, hindi na kailangan ng key.)', 'err');
+    showStatus('I-enter muna ang iyong Groq API key sa taas. Kuhanin sa console.groq.com/keys (LIBRE). Para sa text-based PDF lang hindi kailangan ng key.', 'err');
     scrollToStatus(); return;
   }
   if (imgFiles.length === 0) return;
@@ -496,21 +527,53 @@ async function doExtract() {
     const file = imgFiles[i];
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
 
-    // ── PDF: direct text parse — no API call, no tokens used ──────────────────
+    // ── PDF: try text parse first; fall back to AI scan per page if scanned ───
     if (isPdf) {
       setProg(pct, `File ${i+1} / ${imgFiles.length} — parsing PDF...`);
-      showStatus(`📄 Parsing PDF ${i+1} of ${imgFiles.length} (no AI needed)...`, 'info');
+      showStatus(`📄 Parsing PDF ${i+1} of ${imgFiles.length}...`, 'info');
       try {
-        const rows = await extractPdfRows(file, i+1);
-        if (rows.length === 0) {
-          errors.push(`File ${i+1} (${file.name}): No records found in PDF — baka scanned image PDF (hindi text-based)`);
-        } else {
+        const { rows, pdf, textBased } = await extractPdfRows(file, i+1);
+        if (textBased) {
+          // Text-based PDF — no AI needed
           allRows = allRows.concat(rows);
+          showStatus(`✅ PDF parsed: ${rows.length} records (no AI tokens used)`, 'ok');
+        } else {
+          // Scanned / image PDF — render each page and send to Groq AI
+          if (!key) {
+            errors.push(`File ${i+1} (${file.name}): Scanned PDF — kailangan ng Groq API key para i-scan. I-save ang key sa taas.`);
+          } else {
+            showStatus(`📷 Scanned PDF detected — converting pages to images para sa AI...`, 'warn');
+            for (let pg = 1; pg <= pdf.numPages; pg++) {
+              if (reqThisMinute >= 28) {
+                const elapsed = Date.now() - minuteStart;
+                const wait = Math.max(0, 61000 - elapsed);
+                if (wait > 0) { await new Promise(r => setTimeout(r, wait)); }
+                reqThisMinute = 0; minuteStart = Date.now();
+              }
+              if (pg > 1) await new Promise(r => setTimeout(r, GAP_MS));
+              setProg(pct, `PDF ${i+1} — scanning page ${pg}/${pdf.numPages} via AI...`);
+              showStatus(`🔍 PDF page ${pg}/${pdf.numPages} — sending to AI...`, 'info');
+              try {
+                const b64  = await pdfPageToJpeg(pdf, pg);
+                const pgRows = await callGroq(key, b64, 'image/jpeg');
+                pgRows.forEach(r => { r._page = i+1; r._pdfPg = pg; });
+                allRows = allRows.concat(pgRows);
+                reqThisMinute++;
+              } catch(e) {
+                const isTPD = e.message.toLowerCase().includes('per day');
+                if (isTPD) {
+                  showStatus(`⛔ Daily token limit naubos. ${allRows.length} records na ang na-extract.`, 'err');
+                  errors.push(`Daily limit reached`); break;
+                }
+                errors.push(`PDF ${i+1} page ${pg}: ${e.message}`);
+              }
+            }
+          }
         }
       } catch(e) {
         errors.push(`File ${i+1} (${file.name}): ${e.message}`);
       }
-      continue; // skip Groq call entirely for PDFs
+      continue; // skip the image Groq path below
     }
 
     // ── Image: send to Groq AI ────────────────────────────────────────────────
