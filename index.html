@@ -849,8 +849,17 @@ async function doSave() {
       if (last) emps.push({ rn, last, first, middle, branch });
     });
 
-    // Remove conditional formatting rules (source of persistent template blue)
+    // Remove conditional formatting rules
     try { ws.conditionalFormattings = []; } catch(e){}
+
+    // Strip Excel Table banding (tables override cell-level fills)
+    try {
+      Object.values(ws.tables||{}).forEach(t => {
+        if (t.table) {
+          t.table.style = { name:'TableStyleLight1', showFirstColumn:false, showLastColumn:false, showRowStripes:false, showColumnStripes:false };
+        }
+      });
+    } catch(e){}
 
     // Remove ALL formatting from columns E and F entirely
     [5,6].forEach(ci => {
