@@ -814,8 +814,9 @@ async function doSave() {
       if (rn < 3) return;
       const last   = cellStr(row.getCell(1));
       const first  = cellStr(row.getCell(2));
+      const middle = cellStr(row.getCell(3));
       const branch = cellStr(row.getCell(4));
-      if (last) emps.push({ rn, last, first, branch });
+      if (last) emps.push({ rn, last, first, middle, branch });
     });
 
     const unmatched = [];
@@ -958,20 +959,24 @@ function matchEmployee(rec, emps) {
     // Last name must be at least 65% similar (handles 1–2 character OCR typos)
     if (bestLast < 0.65) continue;
 
-    // ── First name similarity ─────────────────────────────────────────────────
-    const firstWords = norm(e.first).split(' ').filter(Boolean);
+    // ── First + middle name similarity ───────────────────────────────────────
+    // Combine first + middle into one pool so "LANILYN I." matches "Lanilyn Ignacio"
+    const firstWords  = norm(e.first ).split(' ').filter(Boolean);
+    const middleWords = norm(e.middle||'').split(' ').filter(Boolean);
+    const givenWords  = [...firstWords, ...middleWords];
     let firstSim = 0;
-    if (firstWords.length) {
-      // best match of any first-name word against any extracted-name word
-      firstSim = Math.max(...firstWords.map(fw => bestWordSim(fw, nameWords)));
+    if (givenWords.length) {
+      firstSim = Math.max(...givenWords.map(gw => bestWordSim(gw, nameWords)));
     }
 
     // ── Branch similarity ─────────────────────────────────────────────────────
     const bs = branchScore(rec.branch||'', e.branch);
 
     // ── Combined score ────────────────────────────────────────────────────────
-    // Last name weighted most (×3), first name (×1.5), branch (×1.5)
-    const sc = (bestLast*3 + firstSim*1.5 + bs*1.5) / 6;
+    // When multiple employees share the same last name, first name must be decisive.
+    // Boost first name weight to ×3 (equal to last name) so "BALANE, LANILYN"
+    // cannot accidentally match "BALANE, JESUSITO".
+    const sc = (bestLast*3 + firstSim*3 + bs*1.5) / 7.5;
 
     if (sc > bestS) { bestS=sc; best=e; }
   }
