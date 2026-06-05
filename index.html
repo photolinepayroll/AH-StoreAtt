@@ -819,6 +819,13 @@ async function doSave() {
       if (last) emps.push({ rn, last, first, middle, branch });
     });
 
+    // Reset column-level style for E and F (source of persistent template blue)
+    const noFill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFFFFF' } };
+    [5,6].forEach(ci => {
+      const col = ws.getColumn(ci);
+      col.style = Object.assign({}, col.style||{}, { fill: noFill, font:{} });
+    });
+
     // Pre-clear ALL masterlist rows so template blue doesn't bleed through
     emps.forEach(({ rn }) => {
       const row = ws.getRow(rn);
