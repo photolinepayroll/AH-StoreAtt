@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Employee Details – Photoline</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#eef2f7;min-height:100vh;padding:20px 10px;}
+.wrap{max-width:520px;margin:0 auto;}
+.topbar{
+  background:linear-gradient(135deg,#1a3c6e,#2563b0);
+  color:#fff;border-radius:12px 12px 0 0;
+  padding:16px 24px;
+}
+.topbar h1{font-size:1.15rem;}
+.topbar .sub{font-size:.75rem;opacity:.75;margin-top:3px;}
+.card{background:#fff;border-radius:0 0 12px 12px;box-shadow:0 4px 24px rgba(0,0,0,.1);padding:28px 24px;}
+
+/* Search section */
+.section-title{font-size:.78rem;font-weight:700;color:#1a3c6e;text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px;}
+.search-row{display:flex;gap:8px;}
+.search-row input{
+  flex:1;border:1.5px solid #c7d4f0;border-radius:8px;
+  padding:10px 13px;font-size:.95rem;outline:none;transition:border .2s;
+}
+.search-row input:focus{border-color:#2563b0;}
+.btn{
+  border:none;border-radius:8px;padding:10px 18px;
+  font-size:.88rem;font-weight:700;cursor:pointer;transition:background .2s;
+}
+.btn-primary{background:#2563b0;color:#fff;}
+.btn-primary:hover{background:#1a4a90;}
+.btn-success{background:#2e7d32;color:#fff;}
+.btn-success:hover{background:#1b5e20;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+
+/* Suggestions dropdown */
+.suggestions{
+  border:1.5px solid #c7d4f0;border-top:none;border-radius:0 0 8px 8px;
+  background:#fff;max-height:200px;overflow-y:auto;display:none;
+}
+.suggestion-item{
+  padding:9px 13px;font-size:.9rem;cursor:pointer;border-bottom:1px solid #f0f4ff;
+}
+.suggestion-item:hover{background:#f0f6ff;}
+.suggestion-item:last-child{border-bottom:none;}
+
+/* Status badges */
+.status{
+  margin-top:12px;padding:10px 14px;border-radius:8px;
+  font-size:.875rem;font-weight:600;display:none;
+}
+.status.found{background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;}
+.status.not-found{background:#fff3e0;color:#e65100;border:1px solid #ffcc80;}
+.status.already{background:#fce4ec;color:#c62828;border:1px solid #ef9a9a;}
+.status.success{background:#e8f5e9;color:#1b5e20;border:1px solid #81c784;}
+
+/* Form */
+.form-section{margin-top:22px;display:none;}
+.form-group{margin-bottom:16px;}
+.form-group label{display:block;font-size:.82rem;font-weight:700;color:#1a3c6e;margin-bottom:5px;}
+.form-group input{
+  width:100%;border:1.5px solid #c7d4f0;border-radius:8px;
+  padding:10px 13px;font-size:.95rem;outline:none;transition:border .2s;
+}
+.form-group input:focus{border-color:#2563b0;}
+.form-group input:disabled{background:#f5f7fa;color:#888;}
+.selected-name{
+  background:#f0f6ff;border:1.5px solid #2563b0;border-radius:8px;
+  padding:10px 13px;font-size:.95rem;font-weight:700;color:#1a3c6e;
+  margin-bottom:16px;
+}
+.submit-row{margin-top:8px;}
+
+/* Modal */
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.45);
+  display:none;align-items:center;justify-content:center;z-index:100;
+}
+.modal-overlay.show{display:flex;}
+.modal{
+  background:#fff;border-radius:12px;padding:28px 24px;
+  max-width:360px;width:90%;text-align:center;
+  box-shadow:0 8px 40px rgba(0,0,0,.2);
+}
+.modal-icon{font-size:2.5rem;margin-bottom:12px;}
+.modal h2{font-size:1.05rem;color:#1a3c6e;margin-bottom:8px;}
+.modal p{font-size:.875rem;color:#555;line-height:1.5;margin-bottom:20px;}
+.modal-btn{
+  background:#2563b0;color:#fff;border:none;border-radius:8px;
+  padding:10px 28px;font-size:.9rem;font-weight:700;cursor:pointer;
+}
+.modal-btn.red{background:#c62828;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>Employee Details Form</h1>
+    <div class="sub">Search your name and fill in your details</div>
+  </div>
+  <div class="card">
+
+    <!-- Search -->
+    <div class="section-title">Search Your Name</div>
+    <div style="position:relative;">
+      <div class="search-row">
+        <input type="text" id="searchInput" placeholder="Type your name to search..." autocomplete="off"/>
+        <button class="btn btn-primary" id="verifyBtn" onclick="verifyName()">Verify</button>
+      </div>
+      <div class="suggestions" id="suggestions"></div>
+    </div>
+    <div class="status" id="statusMsg"></div>
+
+    <!-- Form (shown after name verified) -->
+    <div class="form-section" id="formSection">
+      <hr style="margin:20px 0;border:none;border-top:1px solid #eef2f7;">
+      <div class="section-title">Fill In Your Details</div>
+      <div class="selected-name" id="selectedNameDisplay"></div>
+
+      <div class="form-group">
+        <label>Birthday</label>
+        <input type="date" id="birthday"/>
+      </div>
+      <div class="form-group">
+        <label>Mobile Number</label>
+        <input type="tel" id="mobile" placeholder="e.g. 09171234567"/>
+      </div>
+      <div class="form-group">
+        <label>Personal Email</label>
+        <input type="email" id="personalEmail" placeholder="e.g. juan@gmail.com"/>
+      </div>
+
+      <div class="submit-row">
+        <button class="btn btn-success" style="width:100%;padding:12px;" onclick="submitDetails()">Submit Details</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-icon" id="modalIcon"></div>
+    <h2 id="modalTitle"></h2>
+    <p id="modalMessage"></p>
+    <button class="modal-btn" id="modalBtn" onclick="closeModal()">OK</button>
+  </div>
+</div>
+
+<script>
+// ── EMPLOYEE NAME LIST ──────────────────────────────────────────────
+// Add or remove names here as needed
+const EMPLOYEE_NAMES = [
+  "Juan dela Cruz",
+  "Maria Santos",
+  "Pedro Reyes",
+  "Ana Garcia",
+  "Jose Mendoza",
+  "Luz Fernandez",
+  "Ramon Torres",
+  "Elena Villanueva",
+  "Roberto Castillo",
+  "Cristina Bautista",
+  // TODO: Replace above with your actual employee list
+];
+
+// ── STORAGE KEY ─────────────────────────────────────────────────────
+const STORAGE_KEY = "employee_details_records";
+
+function getRecords() {
+  return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+}
+
+function saveRecord(name, data) {
+  const records = getRecords();
+  records[name.toLowerCase()] = { name, ...data, submittedAt: new Date().toISOString() };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+}
+
+function hasRecord(name) {
+  const records = getRecords();
+  return !!records[name.toLowerCase()];
+}
+
+// ── SEARCH / AUTOCOMPLETE ────────────────────────────────────────────
+let selectedName = null;
+
+document.getElementById("searchInput").addEventListener("input", function () {
+  const q = this.value.trim().toLowerCase();
+  selectedName = null;
+  hideForm();
+  setStatus("", "");
+
+  const box = document.getElementById("suggestions");
+  if (!q) { box.style.display = "none"; return; }
+
+  const matches = EMPLOYEE_NAMES.filter(n => n.toLowerCase().includes(q));
+  if (matches.length === 0) { box.style.display = "none"; return; }
+
+  box.innerHTML = matches.map(n =>
+    `<div class="suggestion-item" onclick="selectName('${n.replace(/'/g,"\\'")}')">` + n + `</div>`
+  ).join("");
+  box.style.display = "block";
+});
+
+function selectName(name) {
+  document.getElementById("searchInput").value = name;
+  document.getElementById("suggestions").style.display = "none";
+  selectedName = name;
+  setStatus("", "");
+  hideForm();
+}
+
+// ── VERIFY ───────────────────────────────────────────────────────────
+function verifyName() {
+  const input = document.getElementById("searchInput").value.trim();
+  if (!input) { setStatus("Please type a name to search.", "not-found"); return; }
+
+  const match = EMPLOYEE_NAMES.find(n => n.toLowerCase() === input.toLowerCase());
+  if (!match) {
+    setStatus("Name not found in the employee list. Please check your spelling.", "not-found");
+    selectedName = null;
+    hideForm();
+    return;
+  }
+
+  selectedName = match;
+
+  if (hasRecord(match)) {
+    setStatus("⚠️ A record for <strong>" + match + "</strong> already exists.", "already");
+    showModal("🔔", "Already Submitted", match + " already has an existing record in the system.", "red");
+    hideForm();
+    return;
+  }
+
+  setStatus("✔ Name verified: <strong>" + match + "</strong>. Please fill in your details below.", "found");
+  showForm(match);
+}
+
+// ── SUBMIT ────────────────────────────────────────────────────────────
+function submitDetails() {
+  if (!selectedName) { alert("Please verify your name first."); return; }
+
+  if (hasRecord(selectedName)) {
+    showModal("🔔", "Already Submitted", selectedName + " already has an existing record.", "red");
+    return;
+  }
+
+  const birthday = document.getElementById("birthday").value;
+  const mobile   = document.getElementById("mobile").value.trim();
+  const email    = document.getElementById("personalEmail").value.trim();
+
+  if (!birthday || !mobile || !email) {
+    showModal("⚠️", "Incomplete Details", "Please fill in all fields before submitting.", "");
+    return;
+  }
+
+  if (!/^[\d\s\+\-\(\)]{7,15}$/.test(mobile)) {
+    showModal("⚠️", "Invalid Mobile Number", "Please enter a valid mobile number.", "");
+    return;
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showModal("⚠️", "Invalid Email", "Please enter a valid email address.", "");
+    return;
+  }
+
+  saveRecord(selectedName, { birthday, mobile, personalEmail: email });
+
+  setStatus("", "");
+  hideForm();
+  document.getElementById("searchInput").value = "";
+  selectedName = null;
+
+  showModal("✅", "Details Submitted!", "Your details have been successfully saved. Thank you!", "");
+}
+
+// ── UI HELPERS ────────────────────────────────────────────────────────
+function setStatus(msg, type) {
+  const el = document.getElementById("statusMsg");
+  el.className = "status";
+  if (!msg) { el.style.display = "none"; return; }
+  el.classList.add(type);
+  el.innerHTML = msg;
+  el.style.display = "block";
+}
+
+function showForm(name) {
+  document.getElementById("selectedNameDisplay").textContent = name;
+  document.getElementById("formSection").style.display = "block";
+  document.getElementById("birthday").value = "";
+  document.getElementById("mobile").value = "";
+  document.getElementById("personalEmail").value = "";
+}
+
+function hideForm() {
+  document.getElementById("formSection").style.display = "none";
+}
+
+function showModal(icon, title, message, btnClass) {
+  document.getElementById("modalIcon").textContent = icon;
+  document.getElementById("modalTitle").textContent = title;
+  document.getElementById("modalMessage").textContent = message;
+  const btn = document.getElementById("modalBtn");
+  btn.className = "modal-btn" + (btnClass ? " " + btnClass : "");
+  document.getElementById("modalOverlay").classList.add("show");
+}
+
+function closeModal() {
+  document.getElementById("modalOverlay").classList.remove("show");
+}
+
+// Close suggestions when clicking outside
+document.addEventListener("click", function(e) {
+  if (!e.target.closest(".search-row") && !e.target.closest(".suggestions")) {
+    document.getElementById("suggestions").style.display = "none";
+  }
+});
+</script>
+</body>
+</html>
