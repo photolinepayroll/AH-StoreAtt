@@ -701,9 +701,19 @@ DEEP SCAN MODE — this image was hard to read on first pass:
 - If the sheet has multiple sections or departments, include ALL of them`;
 }
 
+// Groq rotates/deprecates vision models over time — try candidates in order
+// and stick with whichever one actually works for this API key.
+const GROQ_VISION_MODELS = [
+  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'meta-llama/llama-4-maverick-17b-128e-instruct',
+  'llama-3.2-90b-vision-preview',
+  'llama-3.2-11b-vision-preview'
+];
+let groqModelIdx = 0;
+
 async function callGroqRaw(apiKey, imgBase64, mimeType, deep=false) {
   const body = {
-    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    model: GROQ_VISION_MODELS[groqModelIdx],
     messages: [{
       role: 'user',
       content: [
@@ -724,7 +734,14 @@ async function callGroqRaw(apiKey, imgBase64, mimeType, deep=false) {
 
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error(err.error?.message || `API error ${resp.status}`);
+    const msg = err.error?.message || `API error ${resp.status}`;
+    // Model retired/inaccessible — fall back to the next known vision model and retry.
+    if (/does not exist|decommissioned|no longer supported/i.test(msg) && groqModelIdx < GROQ_VISION_MODELS.length - 1) {
+      groqModelIdx++;
+      console.warn(`Model unavailable (${msg}) — falling back to ${GROQ_VISION_MODELS[groqModelIdx]}`);
+      return callGroqRaw(apiKey, imgBase64, mimeType, deep);
+    }
+    throw new Error(msg);
   }
 
   const data = await resp.json();
