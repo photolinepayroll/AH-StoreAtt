@@ -703,11 +703,13 @@ DEEP SCAN MODE — this image was hard to read on first pass:
 
 // Groq rotates/deprecates vision models over time — try candidates in order
 // and stick with whichever one actually works for this API key.
+// llama-4-scout-17b-16e-instruct and llama-3.2-11b-vision-preview are confirmed
+// decommissioned (Groq API errors, Aug 2026); qwen/qwen3.6-27b is Groq's current
+// recommended vision/OCR model as of the same date.
 const GROQ_VISION_MODELS = [
-  'meta-llama/llama-4-scout-17b-16e-instruct',
+  'qwen/qwen3.6-27b',
   'meta-llama/llama-4-maverick-17b-128e-instruct',
-  'llama-3.2-90b-vision-preview',
-  'llama-3.2-11b-vision-preview'
+  'llama-3.2-90b-vision-preview'
 ];
 let groqModelIdx = 0;
 
