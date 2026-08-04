@@ -1095,7 +1095,7 @@ function showStatus(msg, type) {
   const el = document.getElementById('status');
   el.textContent = msg;
   el.className = 's-' + type;
-  el.style.display = '';
+  el.style.display = 'block';
   // auto-hide info after 4s; keep ok/err/warn until next action
   clearTimeout(_statusTimer);
   if (type === 'info') _statusTimer = setTimeout(() => { el.style.display='none'; }, 4000);
