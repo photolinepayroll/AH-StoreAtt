@@ -821,6 +821,7 @@ async function doSave() {
 
     const unmatched = [];
     let matchedCount = 0;
+    const writtenThisRun = new Set(); // "rn:col" already written with real data this run — never clear these
 
     allRows.forEach((rec, i) => {
       const result = matchEmployee(rec, emps);
@@ -829,11 +830,12 @@ async function doSave() {
         const row = ws.getRow(hit.rn);
         const v1  = rec.d1_15  !== '' && rec.d1_15  != null ? Number(rec.d1_15)  : NaN;
         const v2  = rec.d16_31 !== '' && rec.d16_31 != null ? Number(rec.d16_31) : NaN;
+        const key5 = hit.rn+':5', key6 = hit.rn+':6';
         let wrote = false;
-        if (!isNaN(v1) && isFinite(v1)) { row.getCell(5).value = v1; styleC(row.getCell(5)); wrote=true; }
-        else { clearC(row.getCell(5)); } // remove pre-existing blue from empty cell
-        if (!isNaN(v2) && isFinite(v2)) { row.getCell(6).value = v2; styleC(row.getCell(6)); wrote=true; }
-        else { clearC(row.getCell(6)); } // remove pre-existing blue from empty cell
+        if (!isNaN(v1) && isFinite(v1)) { row.getCell(5).value = v1; styleC(row.getCell(5)); wrote=true; writtenThisRun.add(key5); }
+        else if (!writtenThisRun.has(key5)) { clearC(row.getCell(5)); } // remove blue only from cells this app previously highlighted
+        if (!isNaN(v2) && isFinite(v2)) { row.getCell(6).value = v2; styleC(row.getCell(6)); wrote=true; writtenThisRun.add(key6); }
+        else if (!writtenThisRun.has(key6)) { clearC(row.getCell(6)); } // remove blue only from cells this app previously highlighted
         if (wrote) row.commit();
         rec._matched   = true;
         rec._masterRow = hit.rn;
@@ -994,6 +996,10 @@ function styleC(cell) {
   cell.alignment={ horizontal:'center',vertical:'middle' };
 }
 function clearC(cell) {
+  // Only strip cells this app previously highlighted blue — never touch
+  // template formatting or pre-existing masterlist data it never set.
+  const fg = cell.fill && cell.fill.fgColor && cell.fill.fgColor.argb;
+  if (fg !== 'FFBBDEFB') return;
   cell.fill={ type:'pattern',pattern:'none' };
   cell.font={};
   cell.value=null;
